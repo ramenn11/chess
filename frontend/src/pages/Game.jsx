@@ -345,10 +345,7 @@ function Game() {
     chatMessageHandler,
   ]);
 
-  // =================================================================
   // WEBSOCKET CONNECTION
-  // =================================================================
-
   const handleWsOpen = useCallback(() => {
     console.log('✅ WebSocket connected');
     setConnectionError(null);
@@ -387,10 +384,6 @@ function Game() {
       send({ type: 'join_game' });
     }
   }, [isConnected, send]);
-
-  // =================================================================
-  // GAME LOGIC - ✅ FIXED ORDER (executeMove BEFORE handleMove)
-  // =================================================================
 
   const executeMove = useCallback((from, to, promotion = null) => {
     console.log('🎯 Executing move:', from, to, promotion);
@@ -563,7 +556,8 @@ function Game() {
 
   // RENDER
 
-  if (!isInitialized) {
+  // Don't render board until playerColor is definitively set
+  if (!isInitialized || playerColor === null) {
     return (
       <div className="container mx-auto max-w-7xl h-[calc(100vh-150px)] flex items-center justify-center">
         <div className="text-center">
@@ -575,7 +569,7 @@ function Game() {
   }
 
   return (
-    <div className="container mx-auto max-w-7xl h-screen overflow-hidden flex flex-col justify-center py-4">
+    <div className="container mx-auto max-w-7xl min-h-screen overflow-hidden flex flex-col py-4">
       {connectionError && (
         <div className="fixed top-20 right-6 bg-orange-500/90 text-white px-6 py-3 rounded-lg shadow-lg z-50">
           {connectionError}
@@ -590,12 +584,12 @@ function Game() {
         </div>
       )}
 
-      {/* Main Grid Layout */}
-      <div className="game-layout-grid grid grid-cols-1 xl:grid-cols-[320px_1fr_280px] gap-4 h-full">
+      {/* ✅ CRITICAL FIX: Use flex-1 to allow grid to fill available height */}
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(280px,320px)_minmax(0,1fr)_minmax(250px,280px)] gap-4 flex-1 overflow-hidden">
 
         {/* LEFT COLUMN: Chat & Controls */}
-        <div className="space-y-6 order-2 xl:order-1">
-          <div className="h-64">
+        <div className="flex flex-col space-y-4 order-2 xl:order-1 overflow-y-auto">
+          <div className="flex-shrink-0 h-64">
             <ChatBox
               gameId={gameId}
               isPlayerChat={!isSpectator}
@@ -614,7 +608,7 @@ function Game() {
             playerRating={playerColor === 'white' ? blackPlayer?.rating : whitePlayer?.rating}
           />
 
-          <div className="bg-white/5 backdrop-blur-lg rounded-xl border border-white/10 p-4">
+          <div className="bg-white/5 backdrop-blur-lg rounded-xl border border-white/10 p-4 flex-shrink-0">
             <CapturedPieces
               capturedPieces={capturedPieces}
               color={playerColor === 'white' ? 'black' : 'white'}
@@ -633,9 +627,10 @@ function Game() {
           />
         </div>
 
-        {/* MIDDLE COLUMN: The Board (Wrapper Logic Applied Here) */}
-        <div className="chess-board-wrapper order-1 xl:order-2">
-          <div className="chess-board-container">
+        {/* MIDDLE COLUMN: The Board - Proper flex containment */}
+        <div className="flex items-center justify-center order-1 xl:order-2 overflow-hidden p-2">
+          {/* ✅ CRITICAL: Use aspect-square with w-full to maintain board proportions */}
+          <div className="w-full aspect-square max-h-full">
             <ChessBoard
               gameState={{
                 board: board.board,
@@ -647,35 +642,37 @@ function Game() {
               }}
               onMove={handleMove}
               isSpectator={isSpectator}
-              playerColor={playerColor || 'white'}
+              playerColor={playerColor}
               getValidMoves={getValidMoves}
             />
           </div>
         </div>
 
         {/* RIGHT COLUMN: History & Player Clock */}
-        <div className="space-y-6 order-3 xl:order-3">
+        <div className="flex flex-col space-y-4 order-3 xl:order-3 overflow-y-auto">
           <GameClock
             initialTime={playerColor === 'white' ? whiteTime : blackTime}
             increment={timeIncrement}
             isActive={gameState.status === 'ongoing' && gameState.turn === playerColor}
-            color={playerColor || 'white'}
+            color={playerColor}
             playerName={playerColor === 'white' ? whitePlayer?.username : blackPlayer?.username}
             playerRating={playerColor === 'white' ? whitePlayer?.rating : blackPlayer?.rating}
           />
 
-          <div className="bg-white/5 backdrop-blur-lg rounded-xl border border-white/10 p-4">
+          <div className="bg-white/5 backdrop-blur-lg rounded-xl border border-white/10 p-4 flex-shrink-0">
             <CapturedPieces
               capturedPieces={capturedPieces}
-              color={playerColor || 'white'}
+              color={playerColor}
             />
           </div>
 
-          <MoveHistory
-            moves={moves.filter(m => !m.optimistic)}
-            currentMoveIndex={currentMoveIndex}
-            onMoveClick={handleMoveClick}
-          />
+          <div className="flex-1 overflow-hidden">
+            <MoveHistory
+              moves={moves.filter(m => !m.optimistic)}
+              currentMoveIndex={currentMoveIndex}
+              onMoveClick={handleMoveClick}
+            />
+          </div>
         </div>
       </div>
 

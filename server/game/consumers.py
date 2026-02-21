@@ -858,22 +858,25 @@ class MatchmakingConsumer(AsyncWebsocketConsumer):
         time_control = data.get('time_control', '10+0')
         self.current_time_control = time_control # Tracking for local ref
         
-        # FIX: THE CELERY BOTTLENECK
-        # Write to Redis IMMEDIATELY so the user is in the pool instantly
+        from django.utils import timezone
+        queue_entry = json.dumps({
+            'user_id': self.user.id,
+            'rating': self.user.rating, 
+            'channel_name': self.channel_name,
+            'timestamp': timezone.now().isoformat()
+        })
+    
         if redis_client:
             queue_key = f"matchmaking:{time_control}"
-            redis_client.sadd(queue_key, self.user.id)
-        
-        await self.send(json.dumps({
-            'type': 'matchmaking.queued',
-            'time_control': time_control,
-            'message': 'Searching for opponent...'
-        }))
-        
-        # Now trigger the task to check if we can pair
-        # We pass self.user.rating directly if available, otherwise fetch it
+            redis_client.sadd(queue_key, queue_entry) 
+            
+            await self.send(json.dumps({
+                'type': 'matchmaking.queued', 
+                'time_control': time_control,
+                'message': 'Searching for opponent...'
+            }))
+
         rating = self.user.rating if hasattr(self.user, 'rating') else await self.get_user_rating()
-        
         find_match.delay(
             user_id=self.user.id,
             time_control=time_control,

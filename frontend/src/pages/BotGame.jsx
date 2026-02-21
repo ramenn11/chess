@@ -67,7 +67,7 @@ function BotGame() {
   // Load existing game if gameId exists in URL
   useEffect(() => {
     const isValidUUID = urlGameId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(urlGameId);
-    
+
     if (isValidUUID && !gameLoaded) {
       loadExistingGame(urlGameId);
     } else if (!urlGameId) {
@@ -81,15 +81,15 @@ function BotGame() {
   const suppressScrollTemporarily = useCallback(() => {
     const savedScrollY = window.scrollY;
     let preventScroll = true;
-    
+
     const handler = (e) => {
       if (preventScroll) {
         window.scrollTo(0, savedScrollY);
       }
     };
-    
+
     window.addEventListener('scroll', handler, { passive: false });
-    
+
     setTimeout(() => {
       preventScroll = false;
       window.removeEventListener('scroll', handler);
@@ -206,7 +206,7 @@ function BotGame() {
 
       return true;
     },
-    [board, validator]
+    [board, validator, suppressScrollTemporarily]
   );
 
   const handlePlayerMove = useCallback(
@@ -243,14 +243,12 @@ function BotGame() {
     [gameId, botThinking, gameState, playerColor, board]
   );
 
-  // Replace the executeMoveAndGetBotResponse function in BotGame.jsx
-
   const executeMoveAndGetBotResponse = async (from, to, promotion = null) => {
     setBotThinking(true);
     setError(null);
-  
+
     console.log('🎯 Player move attempt:', { from, to, promotion, gameId, turn: gameState.turn });
-  
+
     try {
       // DON'T execute locally first - let the backend be the source of truth
       // Just validate it's legal
@@ -259,21 +257,21 @@ function BotGame() {
         setBotThinking(false);
         return;
       }
-  
+
       // Send move to backend
       const move = from + to + (promotion || "");
       console.log('📤 Sending to backend:', move);
-      
+
       const result = await botService.makeMove(gameId, move);
       console.log('📊 Backend response:', result);
-  
+
       if (result.success) {
         // Load the NEW board state from backend (this includes both player and bot moves)
         const newBoard = new Board();
         newBoard.loadFen(result.new_fen);
         setBoard(newBoard);
         setValidator(new MoveValidator(newBoard));
-  
+
         // Update game state
         setGameState(prev => ({
           ...prev,
@@ -285,7 +283,7 @@ function BotGame() {
             to: result.bot_move.substring(2, 4)
           } : { from, to }
         }));
-  
+
         // Update move history
         const playerMove = {
           from,
@@ -295,9 +293,9 @@ function BotGame() {
           color: playerColor,
           timestamp: Date.now(),
         };
-        
+
         const newMoves = [playerMove];
-        
+
         if (result.bot_move) {
           const botMove = {
             from: result.bot_move.substring(0, 2),
@@ -308,10 +306,10 @@ function BotGame() {
           };
           newMoves.push(botMove);
         }
-  
+
         setMoves(prev => [...prev, ...newMoves]);
         setCurrentMoveIndex(prev => prev + newMoves.length);
-  
+
         // Check game over
         if (result.game_over) {
           setGameState(prev => ({
@@ -323,9 +321,9 @@ function BotGame() {
           setShowGameEndedModal(true);
           playCheckmate();
         } else if (result.bot_move) {
-           playMove({ isCheck: result.is_check });
+          playMove({ isCheck: result.is_check });
         } else {
-           playMove({});
+          playMove({});
         }
       } else {
         setError(result.error || "Failed to get bot response");
@@ -337,6 +335,7 @@ function BotGame() {
       setBotThinking(false);
     }
   };
+
   const handlePromotion = useCallback(
     async (promotionPiece) => {
       setShowPromotionModal(false);
@@ -415,7 +414,7 @@ function BotGame() {
   const resetGame = async () => {
     // Delete the current game if it exists
     if (gameId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(gameId)) {
-      await botService.deleteGame(gameId).catch(() => {});
+      await botService.deleteGame(gameId).catch(() => { });
     }
 
     // Reset all state
@@ -447,7 +446,7 @@ function BotGame() {
   // Takeback move - removes last move and reverts board
   const handleTakeback = useCallback(() => {
     if (moves.length === 0 || botThinking) return;
-    
+
     const newMoves = moves.slice(0, -1);
     setMoves(newMoves);
     setCurrentMoveIndex(newMoves.length - 1);
@@ -456,7 +455,7 @@ function BotGame() {
     // Rebuild board from moves
     const newBoard = new Board();
     const validator = new MoveValidator(newBoard);
-    
+
     for (const move of newMoves) {
       validator.makeMove(newBoard, move.from, move.to, move.promotion);
     }
@@ -468,9 +467,9 @@ function BotGame() {
     setGameState({
       ...status,
       turn: newBoard.turn,
-      lastMove: newMoves.length > 0 ? { 
-        from: newMoves[newMoves.length - 1].from, 
-        to: newMoves[newMoves.length - 1].to 
+      lastMove: newMoves.length > 0 ? {
+        from: newMoves[newMoves.length - 1].from,
+        to: newMoves[newMoves.length - 1].to
       } : null,
     });
   }, [moves, botThinking]);
@@ -500,7 +499,7 @@ function BotGame() {
     // Rebuild board up to viewIndex
     const newBoard = new Board();
     const validator = new MoveValidator(newBoard);
-    
+
     for (let i = 0; i <= viewIndex && i < moves.length; i++) {
       const move = moves[i];
       validator.makeMove(newBoard, move.from, move.to, move.promotion);
@@ -573,11 +572,10 @@ function BotGame() {
                   <button
                     key={diff.level}
                     onClick={() => setDifficulty(diff.level)}
-                    className={`p-6 rounded-xl transition-all duration-300 border-2 ${
-                      difficulty === diff.level
+                    className={`p-6 rounded-xl transition-all duration-300 border-2 ${difficulty === diff.level
                         ? "bg-gradient-to-br from-purple-500/30 to-pink-500/30 border-purple-500"
                         : "bg-white/5 border-white/10 hover:border-white/30"
-                    }`}
+                      }`}
                   >
                     <div className="text-4xl mb-2">{diff.icon}</div>
                     <div className="text-white font-semibold text-lg">
@@ -600,11 +598,10 @@ function BotGame() {
               <div className="grid grid-cols-2 gap-4">
                 <button
                   onClick={() => setPlayerColor("white")}
-                  className={`p-6 rounded-xl transition-all border-2 ${
-                    playerColor === "white"
+                  className={`p-6 rounded-xl transition-all border-2 ${playerColor === "white"
                       ? "bg-white/20 border-white"
                       : "bg-white/5 border-white/10 hover:border-white/30"
-                  }`}
+                    }`}
                 >
                   <div className="text-4xl mb-2">♔</div>
                   <div className="text-white font-semibold">Play as White</div>
@@ -612,11 +609,10 @@ function BotGame() {
                 </button>
                 <button
                   onClick={() => setPlayerColor("black")}
-                  className={`p-6 rounded-xl transition-all border-2 ${
-                    playerColor === "black"
+                  className={`p-6 rounded-xl transition-all border-2 ${playerColor === "black"
                       ? "bg-gray-900/50 border-gray-400"
                       : "bg-gray-900/20 border-white/10 hover:border-white/30"
-                  }`}
+                    }`}
                 >
                   <div className="text-4xl mb-2">♚</div>
                   <div className="text-white font-semibold">Play as Black</div>
@@ -654,9 +650,9 @@ function BotGame() {
     );
   }
 
-  // Game screen
+  // Proper grid constraints and overflow handling
   return (
-    <div className="container mx-auto max-w-7xl h-[calc(100vh-150px)]">
+    <div className="container mx-auto max-w-7xl h-screen overflow-hidden flex flex-col justify-center py-4">
       {error && (
         <div className="fixed top-20 right-6 bg-red-500/90 text-white px-6 py-3 rounded-lg shadow-lg z-50">
           {error}
@@ -673,9 +669,10 @@ function BotGame() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 xl:grid-cols-[280px_1fr_280px] gap-4 h-full">
+      {/*Added overflow-hidden to grid container */}
+      <div className="grid grid-cols-1 xl:grid-cols-[280px_1fr_280px] gap-4 h-full overflow-hidden">
         {/* Left Sidebar - Bot Info */}
-        <div className="space-y-6">
+        <div className="space-y-6 overflow-y-auto">
           <div className="bg-white/5 backdrop-blur-lg rounded-xl border border-white/10 p-4">
             <div className="flex items-center space-x-3 mb-3">
               <Cpu className="w-8 h-8 text-purple-400" />
@@ -720,9 +717,8 @@ function BotGame() {
           </button>
         </div>
 
-        {/* Center - Chess Board */}
-        <div className="flex flex-col items-center justify-center min-h-0 h-full gap-4">
-          <div className="w-full h-full max-w-[min(90vh,90vw)] max-h-[min(90vh,90vw)]">
+        <div className="flex items-center justify-center overflow-hidden min-h-0">
+          <div className="w-full h-full max-w-[min(90vh,90vw)] max-h-[min(90vh,90vw)] aspect-square">
             <ChessBoard
               gameState={{
                 board: getDisplayBoard().board,
@@ -741,16 +737,15 @@ function BotGame() {
         </div>
 
         {/* Right Sidebar - Player Info & History */}
-        <div className="space-y-6">
+        <div className="space-y-6 overflow-y-auto">
           <div className="bg-white/5 backdrop-blur-lg rounded-xl border border-white/10 p-4">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center space-x-3">
                 <div
-                  className={`w-10 h-10 rounded-full flex items-center justify-center text-xl ${
-                    playerColor === "white"
+                  className={`w-10 h-10 rounded-full flex items-center justify-center text-xl ${playerColor === "white"
                       ? "bg-white text-gray-900"
                       : "bg-gray-900 text-white"
-                  }`}
+                    }`}
                 >
                   {playerColor === "white" ? "♔" : "♚"}
                 </div>
@@ -774,7 +769,7 @@ function BotGame() {
           <MoveHistory
             moves={moves}
             currentMoveIndex={currentMoveIndex}
-            onMoveClick={() => {}}
+            onMoveClick={() => { }}
           />
         </div>
       </div>
@@ -798,7 +793,7 @@ function BotGame() {
               </h2>
               <p className="text-purple-400 font-medium text-sm tracking-widest uppercase">{gameState.result || 'Game Over'}</p>
             </div>
-            
+
             <div className="flex flex-col space-y-3">
               <button
                 onClick={() => setShowGameEndedModal(false)}
