@@ -389,7 +389,7 @@ export default function Game() {
   const isWhitePerspective = state.playerColor === 'white';
 
   return (
-    <div className="container mx-auto max-w-7xl min-h-screen overflow-hidden flex flex-col py-4">
+    <div className="container mx-auto max-w-7xl game-layout-strict min-h-screen flex flex-col py-4 px-4 overflow-hidden">
       {connectionError && (
         <div className="fixed top-20 right-6 bg-orange-500/90 text-white px-6 py-3 rounded-lg shadow-lg z-50">
           {connectionError}
@@ -404,10 +404,11 @@ export default function Game() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 xl:grid-cols-[minmax(280px,320px)_minmax(0,1fr)_minmax(250px,280px)] gap-4 flex-1 overflow-hidden">
+      {/* Added min-h-0 here to ensure grid children don't stretch indefinitely */}
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(280px,320px)_minmax(0,1fr)_minmax(250px,280px)] gap-4 flex-1 overflow-hidden min-h-0">
 
         {/* LEFT COLUMN: Chat & Controls */}
-        <div className="flex flex-col space-y-4 order-2 xl:order-1 overflow-y-auto">
+        <div className="flex flex-col space-y-4 order-2 xl:order-1 overflow-hidden">
           <div className="flex-shrink-0 h-64">
             <ChatBox
               gameId={gameId}
@@ -447,8 +448,10 @@ export default function Game() {
         </div>
 
         {/* MIDDLE COLUMN: The Board */}
-        <div className="flex items-center justify-center order-1 xl:order-2 overflow-hidden p-2">
-          <div className="w-full aspect-square max-h-full">
+        {/* Added min-h-0 to explicitly bound the flex container */}
+        <div className="flex items-center justify-center order-1 xl:order-2 min-h-0 overflow-hidden p-2">
+          {/* Constrained max width so the board never blows past vertical viewport */}
+          <div className="w-full max-w-[80vh] aspect-square">
             <ChessBoard
               gameState={{
                 board: state.board.board,
@@ -467,7 +470,8 @@ export default function Game() {
         </div>
 
         {/* RIGHT COLUMN: History & Player Clock */}
-        <div className="flex flex-col space-y-4 order-3 xl:order-3 overflow-y-auto">
+        {/* Changed overflow-y-auto to overflow-hidden so child flex containers control scroll */}
+        <div className="flex flex-col space-y-4 order-3 xl:order-3 overflow-hidden">
           <GameClock
             initialTime={isWhitePerspective ? state.whiteTime : state.blackTime}
             increment={state.increment}
@@ -484,7 +488,8 @@ export default function Game() {
             />
           </div>
 
-          <div className="flex-1 overflow-hidden">
+          {/* Required absolute bounds (flex-1 min-h-0 flex flex-col) for Virtuoso to calculate height */}
+          <div className="flex-1 min-h-0 flex flex-col">
             <MoveHistory
               moves={state.moves.filter(m => !m.optimistic)}
               currentMoveIndex={state.moves.length - 1} // simplified for reducer approach
