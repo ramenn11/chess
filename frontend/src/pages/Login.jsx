@@ -26,7 +26,7 @@ function Login() {
 
     try {
       const result = await login(formData.email, formData.password);
-      
+
       if (!result.success) {
         setError(result.error || 'Login failed. Please check your credentials.');
       }
@@ -41,11 +41,11 @@ function Login() {
   const handleGoogleSuccess = async (credentialResponse) => {
     setLoading(true);
     setError('');
-    
+
     try {
       // Use AuthContext's googleLogin which handles navigation
       const result = await googleLogin(credentialResponse.credential);
-      
+
       if (!result.success) {
         setError(result.error || 'Google login failed');
       }

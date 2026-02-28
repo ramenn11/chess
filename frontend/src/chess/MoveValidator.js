@@ -9,7 +9,7 @@ class MoveValidator {
       return false;
     }
 
-    // ✅ FIX: Prevent capturing king
+    // Prevent capturing king
     const targetPiece = this.board.getPiece(to);
     if (targetPiece && targetPiece.type === 'king') {
       return false;
@@ -20,21 +20,20 @@ class MoveValidator {
       return false;
     }
 
-    // ✅ FIX: Check if move leaves OUR king in check
-    const testBoard = this.board.clone();
-    const ourColor = this.board.turn; // Save OUR color before move
-    
-    this.makeMove(testBoard, from, to, promotion);
-    
-    // Find OUR king and check if OPPONENT can attack it
-    const kingSquare = this.findKing(testBoard, ourColor);
-    const opponentColor = ourColor === 'white' ? 'black' : 'white';
-    
-    if (this.isSquareAttacked(testBoard, kingSquare, opponentColor)) {
-      return false; // Move leaves our king in check
-    }
+    // 1. IN-PLACE MAKE/UNDO (No more cloning!)
+    const history = this.makeMove(this.board, from, to, promotion);
 
-    return true;
+    // Turn was swapped in makeMove, so our color is now history.turn
+    const ourColor = history.turn;
+    const kingSquare = this.findKing(this.board, ourColor);
+
+    // 2. Fast reverse-lookup to see if the king is attacked
+    const isCheck = this.isSquareAttacked(this.board, kingSquare, ourColor);
+
+    // Immediately undo the move to restore the exact board state
+    this.undoMove(this.board, history);
+
+    return !isCheck; // If not in check, it's a valid move
   }
 
   getPieceMoves(square) {
@@ -82,15 +81,15 @@ class MoveValidator {
     for (const fileDelta of [-1, 1]) {
       const captureFile = coord.file + fileDelta;
       const captureRank = coord.rank + direction;
-      
+
       if (captureFile >= 0 && captureFile <= 7 && captureRank >= 0 && captureRank <= 7) {
         const captureSquare = this.board.coordToSquare(captureFile, captureRank);
         const targetPiece = this.board.getPiece(captureSquare);
-        
+
         if (targetPiece && targetPiece.color !== color) {
           moves.push(captureSquare);
         }
-        
+
         // En passant
         if (captureSquare === this.board.enPassant) {
           moves.push(captureSquare);
@@ -104,16 +103,16 @@ class MoveValidator {
   getKnightMoves(square, color) {
     const moves = [];
     const coord = this.board.squareToCoordinate(square);
-    const deltas = [[2,1], [2,-1], [-2,1], [-2,-1], [1,2], [1,-2], [-1,2], [-1,-2]];
+    const deltas = [[2, 1], [2, -1], [-2, 1], [-2, -1], [1, 2], [1, -2], [-1, 2], [-1, -2]];
 
     for (const [df, dr] of deltas) {
       const newFile = coord.file + df;
       const newRank = coord.rank + dr;
-      
+
       if (newFile >= 0 && newFile <= 7 && newRank >= 0 && newRank <= 7) {
         const targetSquare = this.board.coordToSquare(newFile, newRank);
         const targetPiece = this.board.getPiece(targetSquare);
-        
+
         if (!targetPiece || targetPiece.color !== color) {
           moves.push(targetSquare);
         }
@@ -141,7 +140,7 @@ class MoveValidator {
           if (targetPiece.color !== color) {
             moves.push(targetSquare);
           }
-          break;
+          break; // Stop at the first piece hit
         }
 
         newFile += df;
@@ -153,17 +152,17 @@ class MoveValidator {
   }
 
   getBishopMoves(square, color) {
-    return this.getSlidingMoves(square, color, [[1,1], [1,-1], [-1,1], [-1,-1]]);
+    return this.getSlidingMoves(square, color, [[1, 1], [1, -1], [-1, 1], [-1, -1]]);
   }
 
   getRookMoves(square, color) {
-    return this.getSlidingMoves(square, color, [[1,0], [-1,0], [0,1], [0,-1]]);
+    return this.getSlidingMoves(square, color, [[1, 0], [-1, 0], [0, 1], [0, -1]]);
   }
 
   getQueenMoves(square, color) {
     return this.getSlidingMoves(square, color, [
-      [1,1], [1,-1], [-1,1], [-1,-1],
-      [1,0], [-1,0], [0,1], [0,-1]
+      [1, 1], [1, -1], [-1, 1], [-1, -1],
+      [1, 0], [-1, 0], [0, 1], [0, -1]
     ]);
   }
 
@@ -190,35 +189,34 @@ class MoveValidator {
     }
 
     // Castling
-    const kingSquare = square;
-    const isKingAttacked = this.isSquareAttacked(this.board, kingSquare, color);
-    
+    const isKingAttacked = this.isSquareAttacked(this.board, square, color);
+
     if (!isKingAttacked) {
       const startRank = color === 'white' ? 0 : 7;
 
       // Kingside castling
-      if ((color === 'white' && this.board.castling.K) || 
-          (color === 'black' && this.board.castling.k)) {
+      if ((color === 'white' && this.board.castling.K) ||
+        (color === 'black' && this.board.castling.k)) {
         const f = this.board.coordToSquare(5, startRank);
         const g = this.board.coordToSquare(6, startRank);
-        
+
         if (!this.board.getPiece(f) && !this.board.getPiece(g) &&
-            !this.isSquareAttacked(this.board, f, color) &&
-            !this.isSquareAttacked(this.board, g, color)) {
+          !this.isSquareAttacked(this.board, f, color) &&
+          !this.isSquareAttacked(this.board, g, color)) {
           moves.push(g);
         }
       }
 
       // Queenside castling
-      if ((color === 'white' && this.board.castling.Q) || 
-          (color === 'black' && this.board.castling.q)) {
+      if ((color === 'white' && this.board.castling.Q) ||
+        (color === 'black' && this.board.castling.q)) {
         const d = this.board.coordToSquare(3, startRank);
         const c = this.board.coordToSquare(2, startRank);
         const b = this.board.coordToSquare(1, startRank);
-        
+
         if (!this.board.getPiece(d) && !this.board.getPiece(c) && !this.board.getPiece(b) &&
-            !this.isSquareAttacked(this.board, d, color) &&
-            !this.isSquareAttacked(this.board, c, color)) {
+          !this.isSquareAttacked(this.board, d, color) &&
+          !this.isSquareAttacked(this.board, c, color)) {
           moves.push(c);
         }
       }
@@ -227,49 +225,64 @@ class MoveValidator {
     return moves;
   }
 
-  getKingMovesSimple(square, color) {
-    const moves = [];
-    const coord = this.board.squareToCoordinate(square);
-
-    for (let df = -1; df <= 1; df++) {
-      for (let dr = -1; dr <= 1; dr++) {
-        if (df === 0 && dr === 0) continue;
-
-        const newFile = coord.file + df;
-        const newRank = coord.rank + dr;
-
-        if (newFile >= 0 && newFile <= 7 && newRank >= 0 && newRank <= 7) {
-          const targetSquare = this.board.coordToSquare(newFile, newRank);
-          const targetPiece = this.board.getPiece(targetSquare);
-
-          if (!targetPiece || targetPiece.color !== color) {
-            moves.push(targetSquare);
-          }
-        }
-      }
-    }
-
-    return moves;
-  }
-
+  // 3. REVERSE LOOKUP FOR ATTACKS (Huge performance boost)
   isSquareAttacked(board, square, defenderColor) {
+    if (!square) return false;
     const attackerColor = defenderColor === 'white' ? 'black' : 'white';
+    const coord = board.squareToCoordinate(square);
 
-    for (const [sq, piece] of Object.entries(board.board)) {
-      if (piece && piece.color === attackerColor) {
-        let moves;
-        if (piece.type === 'king') {
-          moves = this.getKingMovesSimple(sq, piece.color);
-        } else {
-          const tempValidator = new MoveValidator(board);
-          moves = tempValidator.getPieceMoves(sq);
-        }
-        
-        if (moves && moves.includes(square)) {
-          return true;
-        }
+    // Check Knights (L-shapes)
+    const knightDeltas = [[2, 1], [2, -1], [-2, 1], [-2, -1], [1, 2], [1, -2], [-1, 2], [-1, -2]];
+    for (const [df, dr] of knightDeltas) {
+      const f = coord.file + df, r = coord.rank + dr;
+      if (f >= 0 && f <= 7 && r >= 0 && r <= 7) {
+        const p = board.getPiece(board.coordToSquare(f, r));
+        if (p && p.color === attackerColor && p.type === 'knight') return true;
       }
     }
+
+    // Check Pawns
+    // White is attacked from above (rank + 1), Black is attacked from below (rank - 1)
+    const pawnDir = defenderColor === 'white' ? 1 : -1;
+    for (const df of [-1, 1]) {
+      const f = coord.file + df, r = coord.rank + pawnDir;
+      if (f >= 0 && f <= 7 && r >= 0 && r <= 7) {
+        const p = board.getPiece(board.coordToSquare(f, r));
+        if (p && p.color === attackerColor && p.type === 'pawn') return true;
+      }
+    }
+
+    // Check Kings (1 square in all directions)
+    const kingDeltas = [[1, 1], [1, 0], [1, -1], [0, 1], [0, -1], [-1, 1], [-1, 0], [-1, -1]];
+    for (const [df, dr] of kingDeltas) {
+      const f = coord.file + df, r = coord.rank + dr;
+      if (f >= 0 && f <= 7 && r >= 0 && r <= 7) {
+        const p = board.getPiece(board.coordToSquare(f, r));
+        if (p && p.color === attackerColor && p.type === 'king') return true;
+      }
+    }
+
+    // Helper to raycast for sliding pieces
+    const checkSliding = (deltas, types) => {
+      for (const [df, dr] of deltas) {
+        let f = coord.file + df, r = coord.rank + dr;
+        while (f >= 0 && f <= 7 && r >= 0 && r <= 7) {
+          const p = board.getPiece(board.coordToSquare(f, r));
+          if (p) {
+            if (p.color === attackerColor && types.includes(p.type)) return true;
+            break; // Vision blocked by any piece
+          }
+          f += df; r += dr;
+        }
+      }
+      return false;
+    };
+
+    // Check Rooks & Queens (Straight lines)
+    if (checkSliding([[1, 0], [-1, 0], [0, 1], [0, -1]], ['rook', 'queen'])) return true;
+
+    // Check Bishops & Queens (Diagonals)
+    if (checkSliding([[1, 1], [1, -1], [-1, 1], [-1, -1]], ['bishop', 'queen'])) return true;
 
     return false;
   }
@@ -283,72 +296,135 @@ class MoveValidator {
     return null;
   }
 
+  // 4. Returns a history object so we can instantly undo the move
   makeMove(board, from, to, promotion) {
     const piece = board.getPiece(from);
-    const movedPiece = {...piece};
+    if (!piece) return null;
 
+    // Snapshot board state
+    const history = {
+      from,
+      to,
+      piece: { ...piece },
+      captured: board.getPiece(to),
+      castling: { ...board.castling },
+      enPassant: board.enPassant,
+      turn: board.turn,
+      halfMoves: board.halfMoves,
+      fullMoves: board.fullMoves,
+      rookMove: null, // Track castling rook
+      epCapture: null // Track captured en passant pawn
+    };
+
+    const fromCoord = board.squareToCoordinate(from);
+    const toCoord = board.squareToCoordinate(to);
+
+    // FIXED: En Passant capture removal
+    if (piece.type === 'pawn' && to === board.enPassant) {
+      const captureRank = piece.color === 'white' ? toCoord.rank - 1 : toCoord.rank + 1;
+      const capturedSquare = board.coordToSquare(toCoord.file, captureRank);
+
+      history.epCapture = { square: capturedSquare, piece: board.getPiece(capturedSquare) };
+      delete board.board[capturedSquare];
+    }
+
+    // Handle castling (move the rook)
+    if (piece.type === 'king' && Math.abs(toCoord.file - fromCoord.file) === 2) {
+      const rank = fromCoord.rank;
+      let rookFrom, rookTo;
+
+      if (toCoord.file - fromCoord.file === 2) { // Kingside
+        rookFrom = board.coordToSquare(7, rank);
+        rookTo = board.coordToSquare(5, rank);
+      } else { // Queenside
+        rookFrom = board.coordToSquare(0, rank);
+        rookTo = board.coordToSquare(3, rank);
+      }
+
+      const rook = board.getPiece(rookFrom);
+      if (rook) {
+        board.board[rookTo] = rook;
+        delete board.board[rookFrom];
+        history.rookMove = { from: rookFrom, to: rookTo, piece: rook };
+      }
+    }
+
+    // Update castling rights if King moves
+    if (piece.type === 'king') {
+      if (piece.color === 'white') {
+        board.castling.K = false; board.castling.Q = false;
+      } else {
+        board.castling.k = false; board.castling.q = false;
+      }
+    }
+
+    // Update castling rights if Rook moves
+    if (piece.type === 'rook') {
+      if (from === 'a1') board.castling.Q = false;
+      if (from === 'h1') board.castling.K = false;
+      if (from === 'a8') board.castling.q = false;
+      if (from === 'h8') board.castling.k = false;
+    }
+
+    // Update castling rights if Rook is captured
+    if (history.captured && history.captured.type === 'rook') {
+      if (to === 'a1') board.castling.Q = false;
+      if (to === 'h1') board.castling.K = false;
+      if (to === 'a8') board.castling.q = false;
+      if (to === 'h8') board.castling.k = false;
+    }
+
+    // Set new En Passant target square
+    board.enPassant = null;
+    if (piece.type === 'pawn' && Math.abs(toCoord.rank - fromCoord.rank) === 2) {
+      const epRank = piece.color === 'white' ? fromCoord.rank + 1 : fromCoord.rank - 1;
+      board.enPassant = board.coordToSquare(fromCoord.file, epRank);
+    }
+
+    // Move the primary piece
+    const movedPiece = { ...piece };
     if (promotion && movedPiece.type === 'pawn') {
       movedPiece.type = promotion;
     }
-
-    // ✅ FIX: Handle castling - move the rook too
-    if (movedPiece.type === 'king') {
-      const fromCoord = board.squareToCoordinate(from);
-      const toCoord = board.squareToCoordinate(to);
-      const fileDiff = toCoord.file - fromCoord.file;
-
-      // Castling detected (king moves 2 squares)
-      if (Math.abs(fileDiff) === 2) {
-        const rank = fromCoord.rank;
-        
-        if (fileDiff === 2) {
-          // Kingside castling
-          const rookFrom = board.coordToSquare(7, rank);
-          const rookTo = board.coordToSquare(5, rank);
-          const rook = board.getPiece(rookFrom);
-          if (rook) {
-            board.board[rookTo] = rook;
-            delete board.board[rookFrom];
-          }
-        } else if (fileDiff === -2) {
-          // Queenside castling
-          const rookFrom = board.coordToSquare(0, rank);
-          const rookTo = board.coordToSquare(3, rank);
-          const rook = board.getPiece(rookFrom);
-          if (rook) {
-            board.board[rookTo] = rook;
-            delete board.board[rookFrom];
-          }
-        }
-      }
-
-      // Remove castling rights after king moves
-      if (piece.color === 'white') {
-        board.castling.K = false;
-        board.castling.Q = false;
-      } else {
-        board.castling.k = false;
-        board.castling.q = false;
-      }
-    }
-
-    // Handle rook moves (remove castling rights)
-    if (movedPiece.type === 'rook') {
-      const fromCoord = board.squareToCoordinate(from);
-      if (piece.color === 'white') {
-        if (fromCoord.file === 0 && fromCoord.rank === 0) board.castling.Q = false;
-        if (fromCoord.file === 7 && fromCoord.rank === 0) board.castling.K = false;
-      } else {
-        if (fromCoord.file === 0 && fromCoord.rank === 7) board.castling.q = false;
-        if (fromCoord.file === 7 && fromCoord.rank === 7) board.castling.k = false;
-      }
-    }
-
-    // Move the piece
     board.board[to] = movedPiece;
     delete board.board[from];
-    
+
+    // Swap turns
     board.turn = board.turn === 'white' ? 'black' : 'white';
+
+    return history;
+  }
+
+  // 5. Instantly restores the board using the history snapshot
+  undoMove(board, history) {
+    if (!history) return;
+
+    // Restore root state
+    board.turn = history.turn;
+    board.castling = history.castling;
+    board.enPassant = history.enPassant;
+    board.halfMoves = history.halfMoves;
+    board.fullMoves = history.fullMoves;
+
+    // Move primary piece back to origin (automatically un-promotes if applicable)
+    board.board[history.from] = history.piece;
+    delete board.board[history.to];
+
+    // Restore captured piece if there was one
+    if (history.captured) {
+      board.board[history.to] = history.captured;
+    }
+
+    // Restore the captured pawn from an en passant
+    if (history.epCapture) {
+      board.board[history.epCapture.square] = history.epCapture.piece;
+    }
+
+    // Put the rook back if it was a castling move
+    if (history.rookMove) {
+      board.board[history.rookMove.from] = history.rookMove.piece;
+      delete board.board[history.rookMove.to];
+    }
   }
 
   getGameStatus() {
@@ -380,7 +456,6 @@ class MoveValidator {
 
   isInCheck(color) {
     const kingSquare = this.findKing(this.board, color);
-    const opponentColor = color === 'white' ? 'black' : 'white';
     return this.isSquareAttacked(this.board, kingSquare, color);
   }
 

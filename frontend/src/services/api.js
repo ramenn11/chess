@@ -1,7 +1,7 @@
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 class ApiService {
-    constructor(){
+    constructor() {
         this.baseUrl = API_BASE_URL;
         this.isRefreshing = false;
         this.failedQueue = [];
@@ -78,13 +78,13 @@ class ApiService {
                     return new Promise((resolve, reject) => {
                         this.failedQueue.push({ resolve, reject });
                     })
-                    .then(token => {
-                        config.headers['Authorization'] = `Bearer ${token}`;
-                        return fetch(url, config).then(res => res.json());
-                    })
-                    .catch(err => {
-                        throw err;
-                    });
+                        .then(token => {
+                            config.headers['Authorization'] = `Bearer ${token}`;
+                            return fetch(url, config).then(res => res.json());
+                        })
+                        .catch(err => {
+                            throw err;
+                        });
                 }
 
                 this.isRefreshing = true;
@@ -96,17 +96,17 @@ class ApiService {
 
                     config.headers['Authorization'] = `Bearer ${newToken}`;
                     const retryResponse = await fetch(url, config);
-                    
+
                     if (!retryResponse.ok) {
                         const error = await retryResponse.json();
                         throw new Error(error.message || 'Request failed');
                     }
-                    
+
                     return await retryResponse.json();
                 } catch (refreshError) {
                     this.isRefreshing = false;
                     this.processQueue(refreshError, null);
-                    
+
                     localStorage.clear();
                     window.location.href = '/login';
                     throw new Error('Session expired');
@@ -126,7 +126,7 @@ class ApiService {
     }
 
     async get(endpoint, options = {}) {
-        return this.request(endpoint, { ...options, method: 'GET'});
+        return this.request(endpoint, { ...options, method: 'GET' });
     }
 
     async post(endpoint, data, options = {}) {
@@ -154,7 +154,7 @@ class ApiService {
     }
 
     async delete(endpoint, options = {}) {
-        return this.request(endpoint, { ...options, method: "DELETE"});
+        return this.request(endpoint, { ...options, method: "DELETE" });
     }
 
     // AUTH METHODS
@@ -268,14 +268,14 @@ class ApiService {
     async uploadFile(endpoint, file, additionalData = {}) {
         const formData = new FormData();
         formData.append('file', file);
-        
+
         Object.keys(additionalData).forEach(key => {
             formData.append(key, additionalData[key]);
         });
 
         const url = `${this.baseUrl}${endpoint}`;
         const token = localStorage.getItem('token');
-        
+
         const response = await fetch(url, {
             method: 'POST',
             headers: {

@@ -13,57 +13,57 @@ function useUserNotifications() {
 
   useEffect(() => {
     mountedRef.current = true;
-    
+
     if (!user || !token) {
-      console.log('⚠️ No user or token, skipping notification WebSocket');
+      console.log('No user or token, skipping notification WebSocket');
       return;
     }
 
     const connectWS = () => {
       if (!mountedRef.current) return;
-      
+
       try {
         const wsUrl = `${WS_BASE_URL}/ws/notifications/?token=${token}`;
-        console.log('🔔 Connecting to notification WebSocket...');
+        console.log('Connecting to notification WebSocket...');
         wsRef.current = new WebSocket(wsUrl);
 
         wsRef.current.onopen = () => {
-          console.log('✅ Notification WebSocket connected');
+          console.log('Notification WebSocket connected');
         };
 
         wsRef.current.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
             console.log('🔔 Notification received:', data);
-            
+
             if (data.type === 'challenge_accepted') {
               navigate(`/game/${data.game_id}`);
             }
           } catch (err) {
-            console.error('❌ Failed to parse notification:', err);
+            console.error('Failed to parse notification:', err);
           }
         };
 
         wsRef.current.onerror = (error) => {
-          console.error('❌ Notification WS error:', error);
+          console.error('Notification WS error:', error);
         };
 
         wsRef.current.onclose = (event) => {
-          console.log('🔌 Notification WS closed:', event.code);
-          
+          console.log('Notification WS closed:', event.code);
+
           // Don't reconnect on auth failure
           if (event.code === 1008 || event.code === 4001) {
-            console.error('❌ Authentication failed for notifications');
+            console.error('Authentication failed for notifications');
             return;
           }
-          
+
           // Reconnect after 5s
           if (mountedRef.current) {
             reconnectTimeoutRef.current = setTimeout(connectWS, 5000);
           }
         };
       } catch (err) {
-        console.error('❌ Failed to create notification WebSocket:', err);
+        console.error('Failed to create notification WebSocket:', err);
       }
     };
 

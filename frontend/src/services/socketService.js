@@ -12,21 +12,24 @@ function useWebSocket(url, options = {}) {
   const reconnectAttemptsRef = useRef(0);
   const mountedRef = useRef(true);
 
+  // 1. THE FIX: Store the latest callbacks in a ref
+  // This prevents infinite reconnect loops when the parent component re-renders
+  const callbacksRef = useRef(options);
+  useEffect(() => {
+    callbacksRef.current = options;
+  });
+
   const {
-    onMessage,
-    onOpen,
-    onClose,
-    onError,
     reconnect = true,
     reconnectInterval = 3000,
     maxReconnectAttempts = 5,
   } = options;
 
+  // 2. Remove the callbacks from the dependency array here
   const connect = useCallback(() => {
     if (!mountedRef.current) return;
 
     try {
-      // Updated: Check for 'access_token' first, then fallback to 'token'
       const token = localStorage.getItem('access_token') || localStorage.getItem('token');
 
       const wsUrl = token
@@ -41,7 +44,8 @@ function useWebSocket(url, options = {}) {
         setIsConnected(true);
         setError(null);
         reconnectAttemptsRef.current = 0;
-        onOpen?.(event);
+        // Call it via the ref
+        callbacksRef.current.onOpen?.(event);
       };
 
       wsRef.current.onmessage = (event) => {
@@ -49,7 +53,8 @@ function useWebSocket(url, options = {}) {
         try {
           const data = JSON.parse(event.data);
           setLastMessage(data);
-          onMessage?.(data);
+          // Call it via the ref
+          callbacksRef.current.onMessage?.(data);
         } catch (err) {
           console.error('❌ Failed to parse WebSocket message', err);
         }
@@ -59,21 +64,20 @@ function useWebSocket(url, options = {}) {
         if (!mountedRef.current) return;
         console.error('❌ WebSocket error', event);
         setError('WebSocket connection error');
-        onError?.(event);
+        // Call it via the ref
+        callbacksRef.current.onError?.(event);
       };
 
       wsRef.current.onclose = (event) => {
         if (!mountedRef.current) return;
         console.log('🔌 WebSocket disconnected', event.code, event.reason);
         setIsConnected(false);
-        onClose?.(event);
+        // Call it via the ref
+        callbacksRef.current.onClose?.(event);
 
-        // Authentication failure → STOP reconnect
-        // Note: With the new middleware, 4001 might come from the Consumer, not middleware.
         if (event.code === 1008 || event.code === 4001) {
           console.error('❌ Authentication failed - stopping reconnection');
           setError('Session expired. Please login again.');
-          // Clear tokens to prevent loop
           localStorage.removeItem('access_token');
           localStorage.removeItem('token');
           localStorage.removeItem('refresh');
@@ -82,13 +86,11 @@ function useWebSocket(url, options = {}) {
           return;
         }
 
-        // Clean manual disconnect → NO reconnect
         if (event.code === 1000) {
           console.log('ℹ️ Clean disconnect - no reconnection needed');
           return;
         }
 
-        // Reconnect with exponential backoff
         if (reconnect && reconnectAttemptsRef.current < maxReconnectAttempts && mountedRef.current) {
           reconnectAttemptsRef.current += 1;
 
@@ -112,7 +114,7 @@ function useWebSocket(url, options = {}) {
       console.error('❌ Failed to create WebSocket connection', err);
       setError('Failed to connect');
     }
-  }, [url, onMessage, onOpen, onClose, onError, reconnect, reconnectInterval, maxReconnectAttempts]);
+  }, [url, reconnect, reconnectInterval, maxReconnectAttempts]);
 
   const disconnect = useCallback(() => {
     if (reconnectTimeoutRef.current) {

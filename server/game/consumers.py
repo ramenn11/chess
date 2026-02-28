@@ -61,7 +61,7 @@ class GameConsumer(AsyncWebsocketConsumer):
             # Start listening task
             self.listener_task = asyncio.create_task(self._redis_listener())
             
-            print(f"✅ Redis connected for game {self.game_id}")
+            print(f"Redis connected for game {self.game_id}")
         except Exception as e:
             print(f"❌ Redis connection failed: {e}. Falling back to channel layer only.")
             self.redis = None
@@ -79,10 +79,10 @@ class GameConsumer(AsyncWebsocketConsumer):
             await self.clock_manager.subscribe(self.channel_name)
         
         await self.accept()
-        print(f"👤 {self.user.username} connected to game {self.game_id}")
+        print(f"{self.user.username} connected to game {self.game_id}")
     
     async def disconnect(self, close_code):
-        print(f"🔌 {self.user.username} disconnecting from game {self.game_id} (code: {close_code})")
+        print(f"{self.user.username} disconnecting from game {self.game_id} (code: {close_code})")
         
         # Unsubscribe from Redis
         if hasattr(self, 'pubsub') and self.pubsub:
@@ -853,11 +853,14 @@ class MatchmakingConsumer(AsyncWebsocketConsumer):
                 'message': 'Invalid JSON'
             }))
     
+    # Find handle_join_queue method and REPLACE the Redis block:
+
     async def handle_join_queue(self, data):
-        """Join matchmaking queue - Fixed for Bottlenecks"""
+        """Join matchmaking queue - Fixed for Data Integrity"""
         time_control = data.get('time_control', '10+0')
-        self.current_time_control = time_control # Tracking for local ref
-        
+        self.current_time_control = time_control
+
+        # [FIX START] Create a standardized JSON entry matching tasks.py expectation
         from django.utils import timezone
         queue_entry = json.dumps({
             'user_id': self.user.id,
@@ -865,9 +868,10 @@ class MatchmakingConsumer(AsyncWebsocketConsumer):
             'channel_name': self.channel_name,
             'timestamp': timezone.now().isoformat()
         })
-    
+        
         if redis_client:
             queue_key = f"matchmaking:{time_control}"
+            # Use the JSON entry, NOT just the ID
             redis_client.sadd(queue_key, queue_entry) 
             
             await self.send(json.dumps({

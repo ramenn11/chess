@@ -61,18 +61,18 @@ export function AuthProvider({ children }) {
       }
 
       const data = await response.json();
-      
+
       localStorage.setItem('token', data.token);
       localStorage.setItem('user', JSON.stringify(data.user));
-      
+
       setToken(data.token);
       setUser(data.user);
-      
+
       // Navigate to home after successful login
       setTimeout(() => {
         navigate('/', { replace: true });
       }, 100);
-      
+
       return { success: true };
     } catch (error) {
       return { success: false, error: error.message };
@@ -93,46 +93,46 @@ export function AuthProvider({ children }) {
       }
 
       const data = await response.json();
-      
+
       localStorage.setItem('token', data.token);
       localStorage.setItem('user', JSON.stringify(data.user));
-      
+
       setToken(data.token);
       setUser(data.user);
-      
+
       // Navigate to home after successful registration
       setTimeout(() => {
         navigate('/', { replace: true });
       }, 100);
-      
+
       return { success: true };
     } catch (error) {
       return { success: false, error: error.message };
     }
   };
 
- const googleLogin = async (googleToken) => {
+  const googleLogin = async (googleToken) => {
     try {
       const result = await authService.googleLogin(googleToken);
-      
+
       if (result.success) {
         // authService already stored token/user in localStorage
         const storedToken = localStorage.getItem('token');
         const storedUser = localStorage.getItem('user');
-        
+
         if (storedToken && storedUser) {
           setToken(storedToken);
           setUser(JSON.parse(storedUser));
-          
+
           // Navigate to home
           setTimeout(() => {
             navigate('/', { replace: true });
           }, 100);
-          
+
           return { success: true };
         }
       }
-      
+
       return result;
     } catch (error) {
       return { success: false, error: error.message };
