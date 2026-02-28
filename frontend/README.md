@@ -84,7 +84,6 @@ chess-app/
 
       context/
         AuthContext.jsx              # User authentication
-        GameContext.jsx              # Global game state
         SocketContext.jsx            # WebSocket provider
         ThemeContext.jsx             # Theme management
 

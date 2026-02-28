@@ -17,32 +17,29 @@ import Friends from './pages/Friends';
 import Spectate from './pages/Spectate';
 
 import { AuthProvider } from "./context/AuthContext";
-import { GameProvider } from "./context/GameContext";
 import useUserNotifications from './hooks/useUserNotifications';
 
 function AppRouter() {
-    return (
-        <AuthProvider>
-            <GameProvider>
-                <Routes>
-                    <Route path="/login" element={<Login />} />
-                    <Route path="/register" element={<Register />} />
-                    <Route path="/*" 
-                        element={
-                        <ProtectedRoute>
-                            <MainLayout />
-                        </ProtectedRoute>
-                        } 
-                    />
-                </Routes>
-            </GameProvider>
-        </AuthProvider>
-    );
+  return (
+    <AuthProvider>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+        <Route path="/*"
+          element={
+            <ProtectedRoute>
+              <MainLayout />
+            </ProtectedRoute>
+          }
+        />
+      </Routes>
+    </AuthProvider>
+  );
 }
 
 function MainLayout() {
   useUserNotifications();
-  
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
       <Navbar />
