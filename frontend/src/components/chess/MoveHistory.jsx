@@ -1,196 +1,114 @@
+// frontend/src/components/chess/MoveHistory.jsx
 import React, { useRef, useEffect } from 'react';
+import { Virtuoso } from 'react-virtuoso';
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
 
 function MoveHistory({ moves, currentMoveIndex, onMoveClick }) {
-  const movesEndRef = useRef(null);
-  const activeRef = useRef(null);
-  const containerRef = useRef(null); // NEW: Container reference
+  const virtuosoRef = useRef(null);
 
+  // Group moves into pairs [white, black]
+  const movePairs = moves.reduce((result, value, index, array) => {
+    if (index % 2 === 0) result.push(array.slice(index, index + 2));
+    return result;
+  }, []);
+
+  // Track the active move and tell Virtuoso to scroll to it
   useEffect(() => {
-    // FIXED: Only scroll the move history container, not the whole page
-    if (currentMoveIndex === moves.length - 1) {
-      // Scroll the container, not the page
-      if (containerRef.current && movesEndRef.current) {
-        const container = containerRef.current;
-        const element = movesEndRef.current;
-        
-        // Calculate scroll position within container only
-        const containerRect = container.getBoundingClientRect();
-        const elementRect = element.getBoundingClientRect();
-        
-        if (elementRect.bottom > containerRect.bottom || elementRect.top < containerRect.top) {
-          element.scrollIntoView({ 
-            behavior: 'smooth',
-            block: 'nearest',  // KEY FIX: Use 'nearest' instead of 'end' or 'start'
-            inline: 'nearest'
-          });
-        }
-      }
-    } else if (activeRef.current && containerRef.current) {
-      // Only scroll if element is outside visible area
-      const container = containerRef.current;
-      const element = activeRef.current;
-      
-      const containerRect = container.getBoundingClientRect();
-      const elementRect = element.getBoundingClientRect();
-      
-      if (elementRect.bottom > containerRect.bottom || elementRect.top < containerRect.top) {
-        element.scrollIntoView({ 
-          behavior: 'smooth', 
-          block: 'nearest',  // KEY FIX
-          inline: 'nearest'
-        });
-      }
+    if (virtuosoRef.current && currentMoveIndex >= 0) {
+      const pairIndex = Math.floor(currentMoveIndex / 2);
+      virtuosoRef.current.scrollToIndex({
+        index: pairIndex,
+        align: 'center',
+        behavior: 'smooth'
+      });
     }
-  }, [currentMoveIndex, moves.length]);
+  }, [currentMoveIndex]);
+
+  const handleFirst = () => { if (moves.length > 0) onMoveClick(0); };
+  const handlePrev = () => { if (currentMoveIndex > 0) onMoveClick(currentMoveIndex - 1); };
+  const handleNext = () => { if (currentMoveIndex < moves.length - 1) onMoveClick(currentMoveIndex + 1); };
+  const handleLast = () => { if (moves.length > 0) onMoveClick(moves.length - 1); };
 
   const formatMove = (move) => {
     if (move.notation) return move.notation;
     return `${move.from}-${move.to}`;
   };
 
-  const movePairs = [];
-  for (let i = 0; i < moves.length; i += 2) {
-    movePairs.push({
-      number: Math.floor(i / 2) + 1,
-      white: moves[i],
-      whiteIndex: i,
-      black: moves[i + 1],
-      blackIndex: i + 1,
-    });
-  }
-
-  const handleFirst = () => {
-    if (moves.length > 0) {
-      onMoveClick(0);
-    }
-  };
-
-  const handlePrev = () => {
-    if (currentMoveIndex > 0) {
-      onMoveClick(currentMoveIndex - 1);
-    }
-  };
-
-  const handleNext = () => {
-    if (currentMoveIndex < moves.length - 1) {
-      onMoveClick(currentMoveIndex + 1);
-    }
-  };
-
-  const handleLast = () => {
-    if (moves.length > 0) {
-      onMoveClick(moves.length - 1);
-    }
-  };
-
   return (
-    <div className="bg-white/5 backdrop-blur-lg rounded-xl border border-white/10 p-4 flex flex-col h-full">
-      <h3 className="text-white font-semibold mb-3">Move History</h3>
-      
-      {/* NEW: Add ref to container and prevent it from causing page scroll */}
-      <div 
-        ref={containerRef}
-        className="flex-1 overflow-y-auto space-y-1 mb-3 min-h-0"
-        style={{ 
-          scrollBehavior: 'smooth',
-          overscrollBehavior: 'contain'  // KEY FIX: Prevent scroll from bubbling to parent
-        }}
-      >
+    <div className="bg-white/5 backdrop-blur-lg rounded-xl border border-white/10 flex flex-col h-full w-full overflow-hidden">
+      <div className="p-3 border-b border-white/10 font-semibold text-white shrink-0">
+        Move History
+      </div>
+
+      {/* Virtuoso strictly bounded within the flex container */}
+      <div className="flex-1 min-h-0 relative">
         {movePairs.length === 0 ? (
           <p className="text-white/40 text-sm text-center py-8">No moves yet</p>
         ) : (
-          movePairs.map((pair, idx) => (
-            <div
-              key={idx}
-              className="grid grid-cols-[40px_1fr_1fr] gap-2 text-sm"
-            >
-              {/* Move Number */}
-              <span className="text-white/40 font-semibold self-center">{pair.number}.</span>
-              
-              {/* White's Move */}
-              <button
-                ref={currentMoveIndex === pair.whiteIndex ? activeRef : null}
-                onClick={() => onMoveClick(pair.whiteIndex)}
-                className={`
-                  text-left px-2 py-1 rounded transition-colors
-                  ${currentMoveIndex === pair.whiteIndex
-                    ? 'bg-purple-600/50 text-white font-semibold ring-2 ring-purple-400'
-                    : 'text-white/80 hover:bg-white/10'
-                  }
-                `}
-              >
-                {formatMove(pair.white)}
-              </button>
-              
-              {/* Black's Move */}
-              {pair.black ? (
+          <Virtuoso
+            ref={virtuosoRef}
+            className="h-full w-full custom-scrollbar absolute inset-0"
+            data={movePairs}
+            initialTopMostItemIndex={movePairs.length - 1} // Auto-scroll to bottom initially
+            itemContent={(index, pair) => (
+              <div className="grid grid-cols-[40px_1fr_1fr] gap-2 text-sm px-4 py-1 hover:bg-white/5 transition-colors">
+                <span className="text-white/40 font-semibold self-center">{index + 1}.</span>
+
                 <button
-                  ref={currentMoveIndex === pair.blackIndex ? activeRef : null}
-                  onClick={() => onMoveClick(pair.blackIndex)}
-                  className={`
-                    text-left px-2 py-1 rounded transition-colors
-                    ${currentMoveIndex === pair.blackIndex
+                  onClick={() => onMoveClick(index * 2)}
+                  className={`text-left px-2 py-1 rounded transition-colors ${currentMoveIndex === index * 2
                       ? 'bg-purple-600/50 text-white font-semibold ring-2 ring-purple-400'
                       : 'text-white/80 hover:bg-white/10'
-                    }
-                  `}
+                    }`}
                 >
-                  {formatMove(pair.black)}
+                  {formatMove(pair[0])}
                 </button>
-              ) : (
-                <div />
-              )}
-            </div>
-          ))
+
+                {pair[1] ? (
+                  <button
+                    onClick={() => onMoveClick(index * 2 + 1)}
+                    className={`text-left px-2 py-1 rounded transition-colors ${currentMoveIndex === index * 2 + 1
+                        ? 'bg-purple-600/50 text-white font-semibold ring-2 ring-purple-400'
+                        : 'text-white/80 hover:bg-white/10'
+                      }`}
+                  >
+                    {formatMove(pair[1])}
+                  </button>
+                ) : (
+                  <div />
+                )}
+              </div>
+            )}
+          />
         )}
-        <div ref={movesEndRef} />
       </div>
 
-      {/* Navigation Buttons */}
-      {moves.length > 0 && (
-        <div className="grid grid-cols-4 gap-2 pt-3 border-t border-white/10">
-          <button
-            onClick={handleFirst}
-            disabled={currentMoveIndex === 0}
-            className="flex items-center justify-center p-2 rounded bg-white/10 hover:bg-white/20 text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-            title="First move"
-          >
-            <ChevronsLeft className="w-4 h-4" />
-          </button>
-          <button
-            onClick={handlePrev}
-            disabled={currentMoveIndex === 0}
-            className="flex items-center justify-center p-2 rounded bg-white/10 hover:bg-white/20 text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-            title="Previous move"
-          >
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-          <button
-            onClick={handleNext}
-            disabled={currentMoveIndex === moves.length - 1}
-            className="flex items-center justify-center p-2 rounded bg-white/10 hover:bg-white/20 text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-            title="Next move"
-          >
-            <ChevronRight className="w-4 h-4" />
-          </button>
-          <button
-            onClick={handleLast}
-            disabled={currentMoveIndex === moves.length - 1}
-            className="flex items-center justify-center p-2 rounded bg-white/10 hover:bg-white/20 text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-            title="Last move"
-          >
-            <ChevronsRight className="w-4 h-4" />
-          </button>
-        </div>
-      )}
-      
-      {/* Current position indicator */}
-      {moves.length > 0 && (
-        <div className="text-center text-white/60 text-xs mt-2">
-          Position: {currentMoveIndex + 1} / {moves.length}
-        </div>
-      )}
+      {/* Navigation Buttons and Position */}
+      <div className="mt-auto shrink-0 border-t border-white/10 bg-white/5">
+        {moves.length > 0 && (
+          <div className="grid grid-cols-4 gap-2 p-3 pb-1">
+            <button onClick={handleFirst} disabled={currentMoveIndex <= 0} className="flex items-center justify-center p-2 rounded bg-white/10 hover:bg-white/20 text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors" title="First move">
+              <ChevronsLeft className="w-4 h-4" />
+            </button>
+            <button onClick={handlePrev} disabled={currentMoveIndex <= 0} className="flex items-center justify-center p-2 rounded bg-white/10 hover:bg-white/20 text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors" title="Previous move">
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <button onClick={handleNext} disabled={currentMoveIndex >= moves.length - 1} className="flex items-center justify-center p-2 rounded bg-white/10 hover:bg-white/20 text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors" title="Next move">
+              <ChevronRight className="w-4 h-4" />
+            </button>
+            <button onClick={handleLast} disabled={currentMoveIndex >= moves.length - 1} className="flex items-center justify-center p-2 rounded bg-white/10 hover:bg-white/20 text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors" title="Last move">
+              <ChevronsRight className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
+        {/* Restored current position indicator */}
+        {moves.length > 0 && (
+          <div className="text-center text-white/60 text-xs pb-3 mt-2">
+            Position: {currentMoveIndex >= 0 ? currentMoveIndex + 1 : 0} / {moves.length}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
