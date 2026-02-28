@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import "../../styles/Board.css";
 import RatingChangeDisplay from "./RatingChangeDisplay";
+import Square from "./Square"; // Import the extracted component
 
 function ChessBoard({ gameState, onMove, isSpectator, playerColor, getValidMoves }) {
   const [selectedSquare, setSelectedSquare] = useState(null);
@@ -11,40 +12,20 @@ function ChessBoard({ gameState, onMove, isSpectator, playerColor, getValidMoves
   const [boardTheme, setBoardTheme] = useState('brown');
   const boardRef = useRef(null);
 
-  const files = playerColor === "black" 
+  const files = playerColor === "black"
     ? ["h", "g", "f", "e", "d", "c", "b", "a"]
     : ["a", "b", "c", "d", "e", "f", "g", "h"];
-  
-  const ranks = playerColor === "black" 
+
+  const ranks = playerColor === "black"
     ? [1, 2, 3, 4, 5, 6, 7, 8]
     : [8, 7, 6, 5, 4, 3, 2, 1];
 
   useEffect(() => {
-    if (gameState?.lastMove) {
-      setLastMove(gameState.lastMove);
-    }
+    if (gameState?.lastMove) setLastMove(gameState.lastMove);
   }, [gameState]);
 
-  useEffect(() => {
-    // Prevent scrolling during game
-    const preventScroll = (e) => {
-      if (selectedSquare || validMoves.length > 0) {
-        e.preventDefault();
-      }
-    };
-
-    document.addEventListener('touchmove', preventScroll, { passive: false });
-    document.addEventListener('wheel', preventScroll, { passive: false });
-
-    return () => {
-      document.removeEventListener('touchmove', preventScroll);
-      document.removeEventListener('wheel', preventScroll);
-    };
-  }, [selectedSquare, validMoves]);
-
-  const handleSquareClick = (file, rank) => {
+  const handleSquareClick = useCallback((file, rank) => {
     if (isSpectator || gameState?.status !== 'ongoing') return;
-
     const square = `${file}${rank}`;
     const piece = gameState?.board?.[square];
 
@@ -55,8 +36,7 @@ function ChessBoard({ gameState, onMove, isSpectator, playerColor, getValidMoves
         setValidMoves([]);
       } else if (piece && piece.color === playerColor) {
         setSelectedSquare(square);
-        const moves = getValidMoves ? getValidMoves(square) : [];
-        setValidMoves(moves);
+        setValidMoves(getValidMoves ? getValidMoves(square) : []);
       } else {
         setSelectedSquare(null);
         setValidMoves([]);
@@ -64,159 +44,102 @@ function ChessBoard({ gameState, onMove, isSpectator, playerColor, getValidMoves
     } else {
       if (piece && piece.color === playerColor && gameState.turn === playerColor) {
         setSelectedSquare(square);
-        const moves = getValidMoves ? getValidMoves(square) : [];
-        setValidMoves(moves);
+        setValidMoves(getValidMoves ? getValidMoves(square) : []);
       }
     }
-  };
+  }, [isSpectator, gameState, selectedSquare, validMoves, playerColor, getValidMoves, onMove]);
 
-  const getPieceAtSquare = (file, rank) => {
-    const square = `${file}${rank}`;
-    return gameState?.board?.[square] || null;
-  };
+  const handleDragStart = useCallback((square, piece) => {
+    if (piece.color === playerColor && gameState.turn === playerColor) {
+      setSelectedSquare(square);
+      setValidMoves(getValidMoves ? getValidMoves(square) : []);
+    }
+  }, [playerColor, gameState?.turn, getValidMoves]);
 
-  const isSquareHighlighted = (file, rank) => {
-    const square = `${file}${rank}`;
-    return validMoves.includes(square);
-  };
+  const handleDragEnd = useCallback((event, sourceSquare) => {
+    if (!boardRef.current) return;
+    const boardRect = boardRef.current.getBoundingClientRect();
+    const squareSize = boardRect.width / 8;
 
-  const isSquareSelected = (file, rank) => {
-    const square = `${file}${rank}`;
-    return selectedSquare === square;
-  };
+    // Support for both mouse and touch end coordinates
+    const clientX = event.clientX ?? (event.changedTouches ? event.changedTouches[0].clientX : 0);
+    const clientY = event.clientY ?? (event.changedTouches ? event.changedTouches[0].clientY : 0);
 
-  const isSquareLastMove = (file, rank) => {
-    const square = `${file}${rank}`;
-    return lastMove?.from === square || lastMove?.to === square;
-  };
+    const dropX = clientX - boardRect.left;
+    const dropY = clientY - boardRect.top;
 
+    const dropFileIdx = Math.floor(dropX / squareSize);
+    const dropRankIdx = Math.floor(dropY / squareSize);
+
+    if (dropFileIdx >= 0 && dropFileIdx < 8 && dropRankIdx >= 0 && dropRankIdx < 8) {
+      const targetFile = files[dropFileIdx];
+      const targetRank = ranks[dropRankIdx];
+      const targetSquare = `${targetFile}${targetRank}`;
+
+      if (validMoves.includes(targetSquare)) {
+        onMove(sourceSquare, targetSquare);
+      }
+    }
+
+    setSelectedSquare(null);
+    setValidMoves([]);
+  }, [files, ranks, validMoves, onMove]);
+
+  const getPieceAtSquare = (file, rank) => gameState?.board?.[`${file}${rank}`] || null;
+  const isSquareHighlighted = (file, rank) => validMoves.includes(`${file}${rank}`);
+  const isSquareSelected = (file, rank) => selectedSquare === `${file}${rank}`;
+  const isSquareLastMove = (file, rank) => lastMove?.from === `${file}${rank}` || lastMove?.to === `${file}${rank}`;
   const isSquareInCheck = (file, rank) => {
-    const square = `${file}${rank}`;
     const piece = getPieceAtSquare(file, rank);
     return piece?.type === "king" && gameState?.check === piece.color;
   };
 
-  const getPieceImage = (piece) => {
+  const getPieceImage = useCallback((piece) => {
     const colorCode = piece.color === 'white' ? 'w' : 'b';
-    const typeMap = {
-      'pawn': 'P', 'knight': 'N', 'bishop': 'B',
-      'rook': 'R', 'queen': 'Q', 'king': 'K'
-    };
-    const typeCode = typeMap[piece.type];
-    return `/assets/pieces/${pieceSet}/${colorCode}${typeCode}.svg`;
-  };
+    const typeMap = { 'pawn': 'P', 'knight': 'N', 'bishop': 'B', 'rook': 'R', 'queen': 'Q', 'king': 'K' };
+    return `/assets/pieces/${pieceSet}/${colorCode}${typeMap[piece.type]}.svg`;
+  }, [pieceSet]);
 
   return (
     <div className="chess-board-container" ref={boardRef}>
       <div className="chess-board-wrapper">
-        <div 
-          className="chess-board" 
-          style={{
-            backgroundImage: `url(/assets/board/${boardTheme}.svg)`,
-            backgroundSize: 'cover',
-            backgroundPosition: 'center'
-          }}
+        <div
+          className="chess-board"
+          style={{ backgroundImage: `url(/assets/board/${boardTheme}.svg)`, backgroundSize: 'cover', backgroundPosition: 'center' }}
         >
           {ranks.map((rank, rankIdx) =>
-            files.map((file, fileIdx) => {
-              const isLight = (rankIdx + fileIdx) % 2 === 0;
-              const piece = getPieceAtSquare(file, rank);
-              const square = `${file}${rank}`;
-              const hasPieceOnValidMove = isSquareHighlighted(file, rank) && piece;
-
-              return (
-                <div
-                  key={square}
-                  className={`
-                    chess-square
-                    ${isLight ? 'light' : 'dark'}
-                    ${isSquareSelected(file, rank) ? 'selected' : ''}
-                    ${hasPieceOnValidMove ? 'valid-capture' : ''}
-                    ${isSquareHighlighted(file, rank) && !piece ? 'valid-move' : ''}
-                    ${isSquareLastMove(file, rank) ? 'last-move' : ''}
-                    ${isSquareInCheck(file, rank) ? 'in-check' : ''}
-                    ${isSpectator ? 'disabled' : ''}
-                  `}
-                  onClick={() => handleSquareClick(file, rank)}
-                >
-                  <AnimatePresence>
-                    {piece && (
-                      <motion.div
-                        key={`${square}-${piece.type}-${piece.color}`}
-                        className="chess-piece"
-                        initial={false}
-                        drag={!isSpectator && piece.color === playerColor && gameState.turn === playerColor}
-                        dragSnapToOrigin={true}
-                        dragElastic={0}
-                        dragTransition={{ bounceStiffness: 600, bounceDamping: 20 }}
-                        whileDrag={{ 
-                          scale: 1.2, 
-                          zIndex: 1000,
-                          cursor: 'grabbing',
-                          filter: 'drop-shadow(0 8px 16px rgba(0,0,0,0.4))'
-                        }}
-                        onDragStart={() => {
-                          if (piece.color === playerColor && gameState.turn === playerColor) {
-                            setSelectedSquare(square);
-                            const moves = getValidMoves ? getValidMoves(square) : [];
-                            setValidMoves(moves);
-                          }
-                        }}
-                        onDragEnd={(event, info) => {
-                          if (!boardRef.current) return;
-
-                          const boardRect = boardRef.current.getBoundingClientRect();
-                          const squareSize = boardRect.width / 8;
-                          
-                          const dropX = event.clientX - boardRect.left;
-                          const dropY = event.clientY - boardRect.top;
-                          
-                          const dropFileIdx = Math.floor(dropX / squareSize);
-                          const dropRankIdx = Math.floor(dropY / squareSize);
-                          
-                          if (dropFileIdx >= 0 && dropFileIdx < 8 && dropRankIdx >= 0 && dropRankIdx < 8) {
-                            const targetFile = files[dropFileIdx];
-                            const targetRank = ranks[dropRankIdx];
-                            const targetSquare = `${targetFile}${targetRank}`;
-                            
-                            if (validMoves.includes(targetSquare)) {
-                              onMove(square, targetSquare);
-                            }
-                          }
-                          
-                          setSelectedSquare(null);
-                          setValidMoves([]);
-                        }}
-                        animate={lastMove?.to === square ? {
-                          scale: [1, 1.1, 1],
-                          transition: { duration: 0.3 }
-                        } : {}}
-                      >
-                        <img 
-                          src={getPieceImage(piece)} 
-                          alt={`${piece.color} ${piece.type}`}
-                          draggable={false}
-                        />
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-
-                  {fileIdx === 0 && <span className="rank-label">{rank}</span>}
-                  {rankIdx === ranks.length - 1 && <span className="file-label">{file}</span>}
-                </div>
-              );
-            })
+            files.map((file, fileIdx) => (
+              <Square
+                key={`${file}${rank}`}
+                file={file}
+                rank={rank}
+                isLight={(rankIdx + fileIdx) % 2 === 0}
+                piece={getPieceAtSquare(file, rank)}
+                isSelected={isSquareSelected(file, rank)}
+                isHighlighted={isSquareHighlighted(file, rank)}
+                isLastMove={isSquareLastMove(file, rank)}
+                isInCheck={isSquareInCheck(file, rank)}
+                isSpectator={isSpectator}
+                getPieceImage={getPieceImage}
+                playerColor={playerColor}
+                isPlayerTurn={gameState?.turn === playerColor}
+                onSquareClick={handleSquareClick}
+                onDragStart={handleDragStart}
+                onDragEnd={handleDragEnd}
+              />
+            ))
           )}
         </div>
 
+        {/* Restored Game Over Overlay */}
         {gameState?.status && gameState.status !== "ongoing" && (
-          <motion.div 
+          <motion.div
             className="game-over-overlay"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.3 }}
           >
-            <motion.div 
+            <motion.div
               className="game-over-card"
               initial={{ scale: 0.8, y: 20 }}
               animate={{ scale: 1, y: 0 }}
@@ -234,21 +157,21 @@ function ChessBoard({ gameState, onMove, isSpectator, playerColor, getValidMoves
                   ? `${gameState.winner === "white" ? "White" : "Black"} wins!`
                   : "Game ended in a draw"}
               </p>
-              
-              {gameState.ratingChanges && <RatingChangeDisplay/>}
+
+              {gameState.ratingChanges && <RatingChangeDisplay />}
             </motion.div>
           </motion.div>
         )}
       </div>
 
-      {/* Theme Selector - Fixed in Corner */}
-      <div 
+      {/* Restored Theme Selector */}
+      <div
         className="fixed bottom-6 right-6 z-50 bg-slate-800/90 backdrop-blur-lg border border-white/20 rounded-xl p-4 shadow-2xl"
         style={{ maxWidth: '200px' }}
       >
         <h4 className="text-white text-sm font-semibold mb-2">Board Theme</h4>
-        <select 
-          value={boardTheme} 
+        <select
+          value={boardTheme}
           onChange={(e) => setBoardTheme(e.target.value)}
           className="w-full bg-white/10 border border-white/20 text-white text-sm rounded-lg px-3 py-2 mb-2"
         >
@@ -256,10 +179,10 @@ function ChessBoard({ gameState, onMove, isSpectator, playerColor, getValidMoves
           <option value="blue">Blue</option>
           <option value="green">Green</option>
         </select>
-        
+
         <h4 className="text-white text-sm font-semibold mb-2">Piece Set</h4>
-        <select 
-          value={pieceSet} 
+        <select
+          value={pieceSet}
           onChange={(e) => setPieceSet(e.target.value)}
           className="w-full bg-white/10 border border-white/20 text-white text-sm rounded-lg px-3 py-2"
         >
