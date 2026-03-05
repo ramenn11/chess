@@ -5,12 +5,10 @@ class UserNotificationConsumer(AsyncWebsocketConsumer):
     """Per-user WebSocket for notifications (challenges, friend requests, etc.)"""
 
     async def connect(self):
-        # ACCEPT FIRST - CRITICAL FIX
         await self.accept()
         
         self.user = self.scope['user']
         
-        # Check auth AFTER accepting
         if not self.user.is_authenticated:
             await self.send(text_data=json.dumps({
                 'type': 'error',

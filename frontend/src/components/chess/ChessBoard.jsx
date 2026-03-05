@@ -4,12 +4,10 @@ import "../../styles/Board.css";
 import RatingChangeDisplay from "./RatingChangeDisplay";
 import Square from "./Square"; // Import the extracted component
 
-function ChessBoard({ gameState, onMove, isSpectator, playerColor, getValidMoves }) {
+function ChessBoard({ gameState, onMove, isSpectator, playerColor, getValidMoves, boardTheme, pieceSet, isViewingHistory }) {
   const [selectedSquare, setSelectedSquare] = useState(null);
   const [validMoves, setValidMoves] = useState([]);
   const [lastMove, setLastMove] = useState(null);
-  const [pieceSet, setPieceSet] = useState('cburnett');
-  const [boardTheme, setBoardTheme] = useState('brown');
   const boardRef = useRef(null);
 
   const files = playerColor === "black"
@@ -57,11 +55,17 @@ function ChessBoard({ gameState, onMove, isSpectator, playerColor, getValidMoves
   }, [playerColor, gameState?.turn, getValidMoves]);
 
   const handleDragEnd = useCallback((event, sourceSquare) => {
+    // Note: framer-motion's onDragEnd signature is (event, info)
+    // But we wrapped it in Square.jsx to pass (event, sourceSquare)
+    // and we need to be careful if we want to use 'info'.
+    // Let's assume Square.jsx passes (event, sourceSquare) as intended in my fix.
+    
     if (!boardRef.current) return;
     const boardRect = boardRef.current.getBoundingClientRect();
     const squareSize = boardRect.width / 8;
 
-    // Support for both mouse and touch end coordinates
+    // If we want to use info.point, we need to pass it from Square.jsx
+    // For now, let's keep using event but make it more robust.
     const clientX = event.clientX ?? (event.changedTouches ? event.changedTouches[0].clientX : 0);
     const clientY = event.clientY ?? (event.changedTouches ? event.changedTouches[0].clientY : 0);
 
@@ -105,7 +109,6 @@ function ChessBoard({ gameState, onMove, isSpectator, playerColor, getValidMoves
       <div className="chess-board-wrapper">
         <div
           className="chess-board"
-          style={{ backgroundImage: `url(/assets/board/${boardTheme}.svg)`, backgroundSize: 'cover', backgroundPosition: 'center' }}
         >
           {ranks.map((rank, rankIdx) =>
             files.map((file, fileIdx) => (
@@ -126,13 +129,14 @@ function ChessBoard({ gameState, onMove, isSpectator, playerColor, getValidMoves
                 onSquareClick={handleSquareClick}
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
+                boardTheme={boardTheme}
               />
             ))
           )}
         </div>
 
         {/* Restored Game Over Overlay */}
-        {gameState?.status && gameState.status !== "ongoing" && (
+        {gameState?.status && gameState.status !== "ongoing" && !isViewingHistory && (
           <motion.div
             className="game-over-overlay"
             initial={{ opacity: 0 }}
@@ -162,33 +166,6 @@ function ChessBoard({ gameState, onMove, isSpectator, playerColor, getValidMoves
             </motion.div>
           </motion.div>
         )}
-      </div>
-
-      {/* Restored Theme Selector */}
-      <div
-        className="fixed bottom-6 right-6 z-50 bg-slate-800/90 backdrop-blur-lg border border-white/20 rounded-xl p-4 shadow-2xl"
-        style={{ maxWidth: '200px' }}
-      >
-        <h4 className="text-white text-sm font-semibold mb-2">Board Theme</h4>
-        <select
-          value={boardTheme}
-          onChange={(e) => setBoardTheme(e.target.value)}
-          className="w-full bg-white/10 border border-white/20 text-white text-sm rounded-lg px-3 py-2 mb-2"
-        >
-          <option value="brown">Brown</option>
-          <option value="blue">Blue</option>
-          <option value="green">Green</option>
-        </select>
-
-        <h4 className="text-white text-sm font-semibold mb-2">Piece Set</h4>
-        <select
-          value={pieceSet}
-          onChange={(e) => setPieceSet(e.target.value)}
-          className="w-full bg-white/10 border border-white/20 text-white text-sm rounded-lg px-3 py-2"
-        >
-          <option value="cburnett">Classic</option>
-          <option value="alpha">Alpha</option>
-        </select>
       </div>
     </div>
   );

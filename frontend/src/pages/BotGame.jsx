@@ -1,24 +1,27 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { Cpu, RotateCcw, Home, Loader2, ChevronLeft, ChevronRight, Moon, Sun, Trophy } from "lucide-react";
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { Cpu, RotateCcw, Home, Loader2, Trophy, Settings, Flag } from 'lucide-react';
+import Navbar from '../components/layout/NavBar';
 
-import ChessBoard from "../components/chess/ChessBoard";
-import MoveHistory from "../components/chess/MoveHistory";
-import CapturedPieces from "../components/chess/CapturedPieces";
-import PromotionModal from "../components/chess/PromotionModal";
-import Board from "../chess/Board";
-import MoveValidator from "../chess/MoveValidator";
-import botService from "../services/botService";
+import ChessBoard from '../components/chess/ChessBoard';
+import MoveHistory from '../components/chess/MoveHistory';
+import CapturedPieces from '../components/chess/CapturedPieces';
+import PromotionModal from '../components/chess/PromotionModal';
+import Board from '../chess/Board';
+import MoveValidator from '../chess/MoveValidator';
+import botService from '../services/botService';
 
-import useSound from "../hooks/useSound";
+import useSound from '../hooks/useSound';
 
 function BotGame() {
   const navigate = useNavigate();
   const { gameId: urlGameId } = useParams();
   const { playMove, playCheckmate, preloadSounds } = useSound();
 
-  // Use ref to track gameId for cleanup
+  // Use ref to track gameId for cleanup and for accessing latest state in callbacks
   const gameIdRef = useRef(null);
+  const boardRef = useRef(null);
+  const validatorRef = useRef(null);
 
   // Game session
   const [gameId, setGameId] = useState(urlGameId || null);
@@ -58,11 +61,26 @@ function BotGame() {
   const [showPromotionModal, setShowPromotionModal] = useState(false);
   const [pendingMove, setPendingMove] = useState(null);
   const [error, setError] = useState(null);
+  const [showConfirmResign, setShowConfirmResign] = useState(false);
 
-  // Update ref whenever gameId changes
+  // Board theme & keyboard navigation state
+  const [showSettings, setShowSettings] = useState(false);
+  const [boardTheme, setBoardTheme] = useState('brown');
+  const [pieceSet, setPieceSet] = useState('cburnett');
+  const [historicalBoard, setHistoricalBoard] = useState(null);
+
+  // Update refs whenever state changes
   useEffect(() => {
     gameIdRef.current = gameId;
   }, [gameId]);
+
+  useEffect(() => {
+    boardRef.current = board;
+  }, [board]);
+
+  useEffect(() => {
+    validatorRef.current = validator;
+  }, [validator]);
 
   // Load existing game if gameId exists in URL
   useEffect(() => {
@@ -77,12 +95,24 @@ function BotGame() {
   }, [urlGameId, gameLoaded]);
 
 
-  // Suppress scroll during moves only
+  // Handle move click in history
+  const handleMoveClick = useCallback((index) => {
+    setViewIndex(index);
+    reconstructBoardAtMove(index);
+  }, []);
+
+  // Return to live position
+  const handleReturnToLive = useCallback(() => {
+    setViewIndex(-1);
+    setHistoricalBoard(null);
+  }, []);
+
+  // Suppress scroll during moves
   const suppressScrollTemporarily = useCallback(() => {
     const savedScrollY = window.scrollY;
     let preventScroll = true;
 
-    const handler = (e) => {
+    const handler = () => {
       if (preventScroll) {
         window.scrollTo(0, savedScrollY);
       }
@@ -95,6 +125,24 @@ function BotGame() {
       window.removeEventListener('scroll', handler);
     }, 100);
   }, []);
+
+  // Helper to reconstruct board at a specific move index
+  const reconstructBoardAtMove = useCallback((moveIndex) => {
+    const newBoard = new Board();
+
+    // Replay moves up to the target index
+    for (let i = 0; i <= moveIndex && i < moves.length; i++) {
+      const move = moves[i];
+      const piece = newBoard.getPiece(move.from);
+      if (piece) {
+        newBoard.board[move.to] = piece;
+        delete newBoard.board[move.from];
+        newBoard.turn = move.color === 'white' ? 'black' : 'white';
+      }
+    }
+
+    setHistoricalBoard(newBoard);
+  }, [moves]);
 
   const loadExistingGame = async (gId) => {
     setIsInitializing(true);
@@ -155,25 +203,25 @@ function BotGame() {
 
   const executeMove = useCallback(
     (from, to, promotion = null) => {
-      if (!validator.isValidMove(from, to, promotion)) {
-        setError("Invalid move");
+      const currentBoard = boardRef.current;
+      const currentValidator = validatorRef.current;
+
+      if (!currentValidator.isValidMove(from, to, promotion)) {
+        setError('Invalid move');
         setTimeout(() => setError(null), 3000);
         return false;
       }
 
-      // Suppress scroll during move
       suppressScrollTemporarily();
 
-      const piece = board.getPiece(from);
-      const capturedPiece = board.getPiece(to);
+      const piece = currentBoard.getPiece(from);
+      const capturedPiece = currentBoard.getPiece(to);
 
-      // Create new board
-      const newBoard = board.clone();
-      validator.makeMove(newBoard, from, to, promotion);
+      const newBoard = currentBoard.clone();
+      currentValidator.makeMove(newBoard, from, to, promotion);
 
       setBoard(newBoard);
 
-      // Update captured pieces
       if (capturedPiece) {
         setCapturedPieces((prev) => ({
           ...prev,
@@ -181,23 +229,21 @@ function BotGame() {
         }));
       }
 
-      // Add move to history
       const move = {
         from,
         to,
         piece: piece.type,
         captured: capturedPiece?.type,
         promotion,
-        notation: `${from}-${to}${promotion ? "=" + promotion : ""}`,
-        color: board.turn,
+        notation: `${from}-${to}${promotion ? '=' + promotion : ''}`,
+        color: currentBoard.turn,
         timestamp: Date.now(),
       };
 
       setMoves((prev) => [...prev, move]);
       setCurrentMoveIndex((prev) => prev + 1);
 
-      // Update game state
-      const status = validator.getGameStatus();
+      const status = currentValidator.getGameStatus();
       setGameState({
         ...status,
         turn: newBoard.turn,
@@ -206,7 +252,7 @@ function BotGame() {
 
       return true;
     },
-    [board, validator, suppressScrollTemporarily]
+    [suppressScrollTemporarily]
   );
 
   const handlePlayerMove = useCallback(
@@ -247,36 +293,50 @@ function BotGame() {
     setBotThinking(true);
     setError(null);
 
-    console.log('🎯 Player move attempt:', { from, to, promotion, gameId, turn: gameState.turn });
+    const currentBoard = boardRef.current;
+    const currentValidator = validatorRef.current;
+    const currentGameId = gameIdRef.current;
+
+    console.log('🎯 Player move attempt:', { from, to, promotion, gameId: currentGameId, turn: gameState.turn });
 
     try {
-      // DON'T execute locally first - let the backend be the source of truth
-      // Just validate it's legal
-      if (!validator.isValidMove(from, to, promotion)) {
-        setError("Invalid move");
+      // Validate it's legal
+      if (!currentValidator.isValidMove(from, to, promotion)) {
+        setError('Invalid move');
         setBotThinking(false);
         return;
       }
 
       // Send move to backend
-      const move = from + to + (promotion || "");
+      const move = from + to + (promotion || '');
       console.log('📤 Sending to backend:', move);
 
-      const result = await botService.makeMove(gameId, move);
+      const result = await botService.makeMove(currentGameId, move);
       console.log('📊 Backend response:', result);
 
       if (result.success) {
-        // Load the NEW board state from backend (this includes both player and bot moves)
+        // Load the NEW board state from backend
         const newBoard = new Board();
         newBoard.loadFen(result.new_fen);
         setBoard(newBoard);
         setValidator(new MoveValidator(newBoard));
 
+        // Update captured pieces from backend moves
+        const newCaptured = { white: [], black: [] };
+        if (result.moves) {
+          result.moves.forEach(m => {
+            if (m.captured) {
+              newCaptured[m.color === 'white' ? 'white' : 'black'].push(m.captured);
+            }
+          });
+          setCapturedPieces(newCaptured);
+        }
+
         // Update game state
         setGameState(prev => ({
           ...prev,
           turn: newBoard.turn,
-          status: result.game_over ? "finished" : "ongoing",
+          status: result.game_over ? 'finished' : 'ongoing',
           winner: result.winner,
           lastMove: result.bot_move ? {
             from: result.bot_move.substring(0, 2),
@@ -288,8 +348,8 @@ function BotGame() {
         const playerMove = {
           from,
           to,
-          piece: board.getPiece(from)?.type,
-          notation: `${from}-${to}${promotion ? "=" + promotion : ""}`,
+          piece: currentBoard.getPiece(from)?.type,
+          notation: `${from}-${to}${promotion ? '=' + promotion : ''}`,
           color: playerColor,
           timestamp: Date.now(),
         };
@@ -314,7 +374,7 @@ function BotGame() {
         if (result.game_over) {
           setGameState(prev => ({
             ...prev,
-            status: "finished",
+            status: 'finished',
             winner: result.winner,
             result: result.result,
           }));
@@ -326,11 +386,11 @@ function BotGame() {
           playMove({});
         }
       } else {
-        setError(result.error || "Failed to get bot response");
+        setError(result.error || 'Failed to get bot response');
       }
     } catch (err) {
-      console.error("❌ Move error:", err);
-      setError("Move failed: " + err.message);
+      console.error('❌ Move error:', err);
+      setError('Move failed: ' + err.message);
     } finally {
       setBotThinking(false);
     }
@@ -443,7 +503,7 @@ function BotGame() {
     [validator]
   );
 
-  // Takeback move - removes last move and reverts board
+  // Takeback move
   const handleTakeback = useCallback(() => {
     if (moves.length === 0 || botThinking) return;
 
@@ -451,6 +511,7 @@ function BotGame() {
     setMoves(newMoves);
     setCurrentMoveIndex(newMoves.length - 1);
     setViewIndex(-1);
+    setHistoricalBoard(null);
 
     // Rebuild board from moves
     const newBoard = new Board();
@@ -477,114 +538,114 @@ function BotGame() {
   // Arrow key navigation for viewing board history
   useEffect(() => {
     const handleKeyDown = (e) => {
+      // Only handle arrow keys if not typing in an input
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+      const maxIndex = moves.length - 1;
+
       if (e.key === 'ArrowLeft') {
         e.preventDefault();
-        setViewIndex(prev => Math.max(-1, prev - 1));
+        setViewIndex(prev => {
+          if (prev === null || prev === -1) {
+            const newIndex = maxIndex;
+            reconstructBoardAtMove(newIndex);
+            return newIndex;
+          } else if (prev > 0) {
+            const newIndex = prev - 1;
+            reconstructBoardAtMove(newIndex);
+            return newIndex;
+          }
+          return prev;
+        });
       } else if (e.key === 'ArrowRight') {
         e.preventDefault();
-        setViewIndex(prev => Math.min(moves.length - 1, prev + 1));
+        setViewIndex(prev => {
+          if (prev === null || prev === -1) return -1;
+          if (prev >= maxIndex) {
+            setHistoricalBoard(null);
+            return -1;
+          }
+          const newIndex = prev + 1;
+          reconstructBoardAtMove(newIndex);
+          return newIndex;
+        });
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [moves.length]);
+  }, [moves]);
 
-  // Get board state for viewing (either current or from history)
-  const getDisplayBoard = useCallback(() => {
-    if (viewIndex === -1) {
-      return board; // Current game state
+  const handleResign = useCallback(() => {
+    if (showConfirmResign) {
+      setGameState(prev => ({
+        ...prev,
+        status: 'finished',
+        winner: playerColor === 'white' ? 'black' : 'white',
+      }));
+      setShowGameEndedModal(true);
+      setShowConfirmResign(false);
+    } else {
+      setShowConfirmResign(true);
+      setTimeout(() => setShowConfirmResign(false), 3000);
     }
+  }, [showConfirmResign, playerColor]);
 
-    // Rebuild board up to viewIndex
-    const newBoard = new Board();
-    const validator = new MoveValidator(newBoard);
-
-    for (let i = 0; i <= viewIndex && i < moves.length; i++) {
-      const move = moves[i];
-      validator.makeMove(newBoard, move.from, move.to, move.promotion);
-    }
-
-    return newBoard;
-  }, [board, viewIndex, moves]);
-
-  // Loading state while checking for existing game
+  // Loading state
   if (isInitializing) {
     return (
-      <div className="container mx-auto max-w-4xl h-screen flex items-center justify-center">
+      <div className="h-screen flex items-center justify-center">
         <div className="text-center">
           <Loader2 className="w-12 h-12 text-purple-400 animate-spin mx-auto mb-4" />
-          <p className="text-white/60">Loading game...</p>
+          <p className="text-white text-lg">Loading game...</p>
         </div>
       </div>
     );
   }
 
-  // Settings screen - shown when no game is started
+  // Settings screen - /bot route - Purple theme
   if (!gameStarted) {
     return (
-      <div className="container mx-auto max-w-4xl h-screen flex items-center justify-center">
-        <div className="bg-white/5 backdrop-blur-lg rounded-2xl border border-white/10 p-8 w-full max-w-2xl">
-          <div className="text-center mb-8">
-            <Cpu className="w-16 h-16 text-purple-400 mx-auto mb-4" />
-            <h1 className="text-4xl font-bold text-white mb-2">
-              Play Against Bot
-            </h1>
-            <p className="text-white/60">Configure your game settings</p>
+      <div className="h-screen bg-gradient-to-br from-purple-900 via-purple-800 to-pink-900 flex items-center justify-center p-4 fixed inset-0 z-50 pt-16">
+        {/* Add navbar for /bot route */}
+        <div className="absolute top-0 left-0 right-0 z-10">
+          <Navbar />
+        </div>
+        <div className="bg-black/30 backdrop-blur-lg rounded-2xl border border-white/10 p-4 w-full max-w-lg">
+          <div className="text-center mb-6">
+            <Cpu className="w-14 h-14 text-purple-300 mx-auto mb-3" />
+            <h1 className="text-3xl font-bold text-white mb-2">Play Against Bot</h1>
+            <p className="text-white/70">Configure your game settings</p>
           </div>
 
           {error && (
-            <div className="mb-6 bg-red-500/20 border border-red-500/50 text-red-200 px-4 py-3 rounded-lg">
+            <div className="mb-4 bg-red-500/20 border border-red-500/50 text-red-200 px-4 py-3 rounded-lg">
               {error}
             </div>
           )}
 
-          <div className="space-y-6">
+          <div className="space-y-4">
             {/* Difficulty Selection */}
             <div>
-              <h3 className="text-white font-semibold mb-3">
-                Select Difficulty
-              </h3>
+              <h3 className="text-white font-semibold mb-3">Select Difficulty</h3>
               <div className="grid grid-cols-3 gap-4">
                 {[
-                  {
-                    level: "easy",
-                    label: "Easy",
-                    time: "0.5s",
-                    icon: "😊",
-                    desc: "Beginner friendly",
-                  },
-                  {
-                    level: "medium",
-                    label: "Medium",
-                    time: "2s",
-                    icon: "🤔",
-                    desc: "Balanced challenge",
-                  },
-                  {
-                    level: "hard",
-                    label: "Hard",
-                    time: "5s",
-                    icon: "😈",
-                    desc: "Advanced play",
-                  },
+                  { level: 'easy', label: 'Easy', time: '0.5s', icon: '😊', desc: 'Beginner friendly' },
+                  { level: 'medium', label: 'Medium', time: '2s', icon: '🤔', desc: 'Balanced challenge' },
+                  { level: 'hard', label: 'Hard', time: '5s', icon: '😈', desc: 'Advanced play' },
                 ].map((diff) => (
                   <button
                     key={diff.level}
                     onClick={() => setDifficulty(diff.level)}
                     className={`p-6 rounded-xl transition-all duration-300 border-2 ${difficulty === diff.level
-                        ? "bg-gradient-to-br from-purple-500/30 to-pink-500/30 border-purple-500"
-                        : "bg-white/5 border-white/10 hover:border-white/30"
+                      ? 'bg-white/20 border-white shadow-lg shadow-purple-500/50'
+                      : 'bg-white/5 border-white/10 hover:border-white/30 hover:bg-white/10'
                       }`}
                   >
                     <div className="text-4xl mb-2">{diff.icon}</div>
-                    <div className="text-white font-semibold text-lg">
-                      {diff.label}
-                    </div>
+                    <div className="text-white font-semibold text-lg">{diff.label}</div>
                     <div className="text-white/60 text-sm">{diff.time}</div>
-                    <div className="text-white/40 text-xs mt-1">
-                      {diff.desc}
-                    </div>
+                    <div className="text-white/40 text-xs mt-1">{diff.desc}</div>
                   </button>
                 ))}
               </div>
@@ -592,15 +653,13 @@ function BotGame() {
 
             {/* Color Selection */}
             <div>
-              <h3 className="text-white font-semibold mb-3">
-                Choose Your Color
-              </h3>
+              <h3 className="text-white font-semibold mb-3">Choose Your Color</h3>
               <div className="grid grid-cols-2 gap-4">
                 <button
-                  onClick={() => setPlayerColor("white")}
-                  className={`p-6 rounded-xl transition-all border-2 ${playerColor === "white"
-                      ? "bg-white/20 border-white"
-                      : "bg-white/5 border-white/10 hover:border-white/30"
+                  onClick={() => setPlayerColor('white')}
+                  className={`p-6 rounded-xl transition-all border-2 ${playerColor === 'white'
+                    ? 'bg-white/20 border-white shadow-lg shadow-white/20'
+                    : 'bg-white/5 border-white/10 hover:border-white/30 hover:bg-white/10'
                     }`}
                 >
                   <div className="text-4xl mb-2">♔</div>
@@ -608,10 +667,10 @@ function BotGame() {
                   <div className="text-white/60 text-sm">You move first</div>
                 </button>
                 <button
-                  onClick={() => setPlayerColor("black")}
-                  className={`p-6 rounded-xl transition-all border-2 ${playerColor === "black"
-                      ? "bg-gray-900/50 border-gray-400"
-                      : "bg-gray-900/20 border-white/10 hover:border-white/30"
+                  onClick={() => setPlayerColor('black')}
+                  className={`p-6 rounded-xl transition-all border-2 ${playerColor === 'black'
+                    ? 'bg-black/50 border-gray-400 shadow-lg shadow-gray-500/30'
+                    : 'bg-black/20 border-white/10 hover:border-white/30 hover:bg-black/40'
                     }`}
                 >
                   <div className="text-4xl mb-2">♚</div>
@@ -625,20 +684,17 @@ function BotGame() {
             <button
               onClick={() => startNewGame(difficulty, playerColor)}
               disabled={isInitializing}
-              className="w-full py-4 rounded-xl font-bold text-lg bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+              className="w-full py-4 rounded-xl font-bold text-lg bg-white/20 hover:bg-white/30 border border-white/30 text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
             >
               {isInitializing ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  <span>Starting Game...</span>
-                </>
+                <><Loader2 className="w-5 h-5 animate-spin" /><span>Starting Game...</span></>
               ) : (
                 <span>Start Game</span>
               )}
             </button>
 
             <button
-              onClick={() => navigate("/")}
+              onClick={() => navigate('/')}
               className="w-full flex items-center justify-center space-x-2 bg-white/10 hover:bg-white/20 text-white rounded-lg p-3 transition-all"
             >
               <Home className="w-4 h-4" />
@@ -650,129 +706,211 @@ function BotGame() {
     );
   }
 
-  // Proper grid constraints and overflow handling
+  const isWhitePerspective = playerColor === 'white';
+
   return (
-    <div className="container mx-auto max-w-7xl h-screen overflow-hidden flex flex-col justify-center py-4">
+    <div className="h-screen flex flex-col overflow-hidden">
       {error && (
         <div className="fixed top-20 right-6 bg-red-500/90 text-white px-6 py-3 rounded-lg shadow-lg z-50">
           {error}
-          <button onClick={() => setError(null)} className="ml-4 font-bold">
-            ×
-          </button>
+          <button onClick={() => setError(null)} className="ml-4 font-bold">×</button>
         </div>
       )}
 
-      {/* Viewing History Indicator */}
-      {viewIndex >= 0 && (
-        <div className="fixed top-24 left-1/2 transform -translate-x-1/2 bg-blue-600 text-white px-6 py-2 rounded-lg shadow-lg z-40">
-          Viewing Move {viewIndex + 1} • Use ← → to navigate • Press <strong>Enter</strong> or make a move to return
-        </div>
-      )}
-
-      {/*Added overflow-hidden to grid container */}
-      <div className="grid grid-cols-1 xl:grid-cols-[280px_1fr_280px] gap-4 h-full overflow-hidden">
-        {/* Left Sidebar - Bot Info */}
-        <div className="space-y-6 overflow-y-auto">
-          <div className="bg-white/5 backdrop-blur-lg rounded-xl border border-white/10 p-4">
-            <div className="flex items-center space-x-3 mb-3">
-              <Cpu className="w-8 h-8 text-purple-400" />
-              <div>
-                <p className="text-white font-semibold">Chess Bot</p>
-                <p className="text-white/60 text-sm capitalize">
-                  {difficulty} Level
-                </p>
-              </div>
-            </div>
-            {botThinking && (
-              <div className="flex items-center space-x-2 text-purple-400 animate-pulse">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span className="text-sm">Thinking...</span>
-              </div>
-            )}
-          </div>
-
-          <div className="bg-white/5 backdrop-blur-lg rounded-xl border border-white/10 p-4">
-            <CapturedPieces
-              capturedPieces={capturedPieces}
-              color={playerColor === "white" ? "black" : "white"}
-            />
-          </div>
-
-          {/* Undo Button */}
-          <button
-            onClick={handleTakeback}
-            disabled={moves.length === 0 || botThinking}
-            className="w-full px-4 py-3 bg-orange-600 hover:bg-orange-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-all font-semibold flex items-center justify-center space-x-2 shadow-lg"
-          >
-            <RotateCcw className="w-5 h-5" />
-            <span>Undo Move</span>
-          </button>
-
-          <button
-            onClick={resetGame}
-            className="w-full flex items-center justify-center space-x-2 bg-white/10 hover:bg-white/20 text-white rounded-lg p-3 transition-all"
-          >
-            <RotateCcw className="w-4 h-4" />
-            <span>New Game</span>
-          </button>
-        </div>
-
-        <div className="flex items-center justify-center overflow-hidden min-h-0">
-          <div className="w-full h-full max-w-[min(90vh,90vw)] max-h-[min(90vh,90vw)] aspect-square">
+      {/* Main Game Area - Lichess Style WITH Sidebar */}
+      <div className="flex-1 flex items-center justify-center p-2 gap-2">
+        {/* Center: Chess Board */}
+        <div className="aspect-square h-full max-h-full relative">
+          <div className="w-full h-full">
             <ChessBoard
               gameState={{
-                board: getDisplayBoard().board,
-                turn: getDisplayBoard().turn,
+                board: historicalBoard ? historicalBoard.board : board.board,
+                turn: historicalBoard ? historicalBoard.turn : board.turn,
                 check: gameState.check,
                 status: gameState.status,
                 winner: gameState.winner,
-                lastMove: gameState.lastMove,
+                lastMove: viewIndex >= 0 ? {
+                  from: moves[viewIndex]?.from,
+                  to: moves[viewIndex]?.to
+                } : gameState.lastMove,
               }}
               onMove={handlePlayerMove}
               isSpectator={viewIndex >= 0 || playerColor !== gameState.turn}
               playerColor={playerColor}
               getValidMoves={getValidMoves}
+              boardTheme={boardTheme}
+              pieceSet={pieceSet}
+              isViewingHistory={viewIndex >= 0}
             />
           </div>
+
+          {/* Viewing History Indicator */}
+          {viewIndex >= 0 && (
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-black/70 backdrop-blur-sm text-white/90 px-4 py-1.5 rounded-full shadow-lg z-10">
+              <span className="text-xs font-medium">Move {viewIndex + 1}</span>
+              <button
+                onClick={handleReturnToLive}
+                className="text-xs bg-green-600 hover:bg-green-500 text-white px-2 py-0.5 rounded-full font-semibold transition-colors"
+              >
+                LIVE
+              </button>
+            </div>
+          )}
         </div>
 
-        {/* Right Sidebar - Player Info & History */}
-        <div className="space-y-6 overflow-y-auto">
-          <div className="bg-white/5 backdrop-blur-lg rounded-xl border border-white/10 p-4">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center space-x-3">
-                <div
-                  className={`w-10 h-10 rounded-full flex items-center justify-center text-xl ${playerColor === "white"
-                      ? "bg-white text-gray-900"
-                      : "bg-gray-900 text-white"
-                    }`}
-                >
-                  {playerColor === "white" ? "♔" : "♚"}
-                </div>
-                <div>
-                  <p className="text-white font-semibold">You</p>
-                  <p className="text-white/60 text-sm capitalize">
-                    {playerColor}
-                  </p>
-                </div>
+        {/* Right: Bot Info, Captured Pieces, History, Controls */}
+        <div className="w-[220px] h-full flex flex-col gap-1">
+          {/* Top - Bot Info */}
+          <div className="bg-[#1e1c1a] rounded shadow-lg p-2 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Cpu className="w-5 h-5 text-purple-400" />
+              <div>
+                <p className="text-white text-sm font-medium">Bot</p>
+                <p className="text-white/50 text-xs capitalize">{difficulty}</p>
               </div>
             </div>
+            {botThinking && (
+              <Loader2 className="w-4 h-4 text-purple-400 animate-spin" />
+            )}
           </div>
 
-          <div className="bg-white/5 backdrop-blur-lg rounded-xl border border-white/10 p-4">
+          {/* Bot Captured Pieces */}
+          <div className="bg-[#1e1c1a] rounded shadow-lg p-2">
+            <CapturedPieces
+              capturedPieces={capturedPieces}
+              color={playerColor === 'white' ? 'black' : 'white'}
+            />
+          </div>
+
+          {/* Move History */}
+          <div className="h-[50%] bg-[#1e1c1a] rounded shadow-lg overflow-hidden min-h-0">
+            <MoveHistory
+              moves={moves}
+              currentMoveIndex={currentMoveIndex}
+              onMoveClick={handleMoveClick}
+              viewingMoveIndex={viewIndex >= 0 ? viewIndex : null}
+              onReturnToLive={handleReturnToLive}
+            />
+          </div>
+
+          {/* Player Captured Pieces */}
+          <div className="bg-[#1e1c1a] rounded shadow-lg p-2">
             <CapturedPieces
               capturedPieces={capturedPieces}
               color={playerColor}
             />
           </div>
 
-          <MoveHistory
-            moves={moves}
-            currentMoveIndex={currentMoveIndex}
-            onMoveClick={() => { }}
-          />
+          {/* Bottom - Player Info */}
+          <div className="bg-[#1e1c1a] rounded shadow-lg p-2 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className={`w-5 h-5 rounded-full flex items-center justify-center text-sm ${playerColor === 'white' ? 'bg-white text-gray-900' : 'bg-gray-800 text-white border border-gray-600'}`}>
+                {playerColor === 'white' ? '♔' : '♚'}
+              </div>
+              <p className="text-white text-sm font-medium">You</p>
+            </div>
+          </div>
+
+          {/* Controls */}
+          <div className="flex flex-col gap-2 bg-[#1e1c1a] rounded shadow-lg p-2">
+            {/* Resign Button */}
+            <button
+              onClick={handleResign}
+              className={`flex items-center justify-center gap-2 px-3 py-2 rounded text-sm font-medium transition-all ${showConfirmResign
+                ? 'bg-red-600 text-white animate-pulse'
+                : 'bg-white/10 hover:bg-white/20 text-white/70 hover:text-white'
+                }`}
+              title={showConfirmResign ? 'Click again to confirm' : 'Resign'}
+            >
+              <Flag className="w-4 h-4" />
+              {showConfirmResign ? 'Confirm?' : 'Resign'}
+            </button>
+
+            {/* Takeback Button */}
+            <button
+              onClick={handleTakeback}
+              disabled={moves.length === 0 || botThinking}
+              className="flex items-center justify-center gap-2 px-3 py-2 rounded text-sm font-medium bg-white/10 hover:bg-white/20 disabled:bg-gray-700 disabled:cursor-not-allowed text-white/70 hover:text-white transition-all"
+              title="Take back last move"
+            >
+              <RotateCcw className="w-4 h-4" />
+              Undo
+            </button>
+
+            {/* New Game Button */}
+            <button
+              onClick={resetGame}
+              className="flex items-center justify-center gap-2 px-3 py-2 rounded text-sm font-medium bg-white/10 hover:bg-white/20 text-white/70 hover:text-white transition-all"
+              title="Start new game"
+            >
+              <Home className="w-4 h-4" />
+              New Game
+            </button>
+
+            {/* Settings Button */}
+            <button
+              onClick={() => setShowSettings(true)}
+              className="flex items-center justify-center gap-2 px-3 py-2 rounded text-sm font-medium bg-white/10 hover:bg-white/20 text-white/70 hover:text-white transition-all"
+              title="Board settings"
+            >
+              <Settings className="w-4 h-4" />
+              Settings
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <div
+          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center"
+          onClick={() => setShowSettings(false)}
+        >
+          <div
+            className="bg-[#272522] rounded-lg p-4 shadow-2xl w-64"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-white font-semibold">Board Settings</h3>
+              <button
+                onClick={() => setShowSettings(false)}
+                className="text-white/50 hover:text-white"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-white/70 text-sm block mb-1">Board Theme</label>
+                <select
+                  value={boardTheme}
+                  onChange={(e) => setBoardTheme(e.target.value)}
+                  className="w-full bg-[#312e2b] border border-white/20 text-white rounded px-3 py-2 text-sm"
+                >
+                  <option value="brown">Brown</option>
+                  <option value="blue">Blue</option>
+                  <option value="green">Green</option>
+                  <option value="purple">Purple</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-white/70 text-sm block mb-1">Piece Set</label>
+                <select
+                  value={pieceSet}
+                  onChange={(e) => setPieceSet(e.target.value)}
+                  className="w-full bg-[#312e2b] border border-white/20 text-white rounded px-3 py-2 text-sm"
+                >
+                  <option value="cburnett">Classic</option>
+                  <option value="alpha">Alpha</option>
+                  <option value="merida">Merida</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <PromotionModal
         isOpen={showPromotionModal}

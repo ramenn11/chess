@@ -167,12 +167,25 @@ class GameConsumer(AsyncWebsocketConsumer):
                 await self.accept_draw()
             elif msg_type == 'decline_draw':
                 await self.decline_draw()
+            elif msg_type == 'request_takeback':
+                await self.request_takeback()
+            elif msg_type == 'accept_takeback':
+                await self.accept_takeback()
         except json.JSONDecodeError:
             await self.send(json.dumps({
                 'type': 'error',
                 'message': 'Invalid JSON'
             }))
-    
+
+    async def broadcast_move(self, event):
+        """Forward a move event broadcast via the channel layer to this websocket."""
+        try:
+            move_event = event.get('event')
+            if move_event is not None:
+                await self.send(json.dumps(move_event))
+        except Exception as e:
+            print(f"broadcast_move error: {e}")
+
     async def join_game(self):
         """Initialize game state for new connection"""
         game = await self.get_game()
@@ -492,6 +505,81 @@ class GameConsumer(AsyncWebsocketConsumer):
             'message': 'Draw offer declined'
         }
         await self.redis.publish(self.game_channel, json.dumps(decline_event))
+    
+    async def request_takeback(self):
+        """Request takeback via Redis"""
+        game = await self.get_game()
+        if not game or game.status != 'ongoing':
+            return
+        
+        # Determine who requested
+        if game.white_player.id == self.user.id:
+            request_from = 'white'
+        elif game.black_player.id == self.user.id:
+            request_from = 'black'
+        else:
+            return
+        
+        # Publish takeback request to Redis
+        takeback_event = {
+            'type': 'takeback_request',
+            'request_from': request_from,
+            'username': self.user.username,
+        }
+        await self.redis.publish(self.game_channel, json.dumps(takeback_event))
+    
+    async def accept_takeback(self):
+        """Accept takeback - revert last move via Redis"""
+        game = await self.get_game()
+        if not game or game.status != 'ongoing':
+            return
+        
+        # Get moves to find last move
+        moves = await self.get_moves()
+        if not moves:
+            return
+        
+        last_move = moves[-1]
+        
+        # Remove last move from database
+        await self._delete_last_move(last_move.id)
+        
+        # Determine previous FEN (if there are still moves left)
+        if len(moves) > 1:
+            new_fen = moves[-2].fen_after
+        else:
+            # Reset to initial position
+            from .chess_engine import ChessEngine
+            engine = ChessEngine()
+            new_fen = engine.get_fen()
+        
+        # Update game state
+        await self._update_game_to_previous_state(game.game_id, new_fen, last_move.color)
+        
+        # Publish takeback accepted event
+        takeback_event = {
+            'type': 'takeback_accepted',
+            'fen': new_fen,
+            'message': f'{self.user.username} accepted takeback'
+        }
+        await self.redis.publish(self.game_channel, json.dumps(takeback_event))
+    
+    @database_sync_to_async
+    def _delete_last_move(self, move_id):
+        """Delete the last move from database"""
+        from .models import Move
+        Move.objects.filter(id=move_id).delete()
+    
+    @database_sync_to_async
+    def _update_game_to_previous_state(self, game_id, fen, last_move_color):
+        """Revert game to previous state"""
+        from .models import Game
+        game = Game.objects.get(game_id=game_id)
+        game.current_fen = fen
+        game.move_count -= 1
+        # Switch turn back to the player who made the last move
+        game.current_turn = last_move_color
+        game.save()
     
     # Channel layer handlers (for clock updates from manager)
     async def clock_tick(self, event):

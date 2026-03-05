@@ -4,13 +4,12 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
 import useWebSocket from '../services/socketService';
 import gameService from '../services/gameService'; // Ensure this service exists in your project
-import { Handshake, Loader2, Trophy } from 'lucide-react';
+import { Handshake, Loader2, Trophy, RotateCcw } from 'lucide-react';
 
 import ChessBoard from '../components/chess/ChessBoard';
-import GameClock from '../components/chess/GameClock';
+import CompactPlayerClock from '../components/chess/CompactPlayerClock';
 import GameControls from '../components/chess/GameControls';
 import MoveHistory from '../components/chess/MoveHistory';
-import CapturedPieces from '../components/chess/CapturedPieces';
 import ChatBox from '../components/chess/ChatBox';
 import PromotionModal from '../components/chess/PromotionModal';
 
@@ -191,7 +190,16 @@ export default function Game() {
   const [showGameEndedModal, setShowGameEndedModal] = useState(false);
   const [error, setError] = useState(null);
   const [connectionError, setConnectionError] = useState(null);
+  const [takebackOffer, setTakebackOffer] = useState(null);
+  const [showTakebackModal, setShowTakebackModal] = useState(false);
   const [chatMessageHandler, setChatMessageHandler] = useState(null);
+
+  // Board theme & keyboard navigation state
+  const [showSettings, setShowSettings] = useState(false);
+  const [boardTheme, setBoardTheme] = useState('brown');
+  const [pieceSet, setPieceSet] = useState('cburnett');
+  const [viewingMoveIndex, setViewingMoveIndex] = useState(null); // null = current position
+  const [historicalBoard, setHistoricalBoard] = useState(null); // For viewing past positions
 
   // Sound Preloading & Scroll Management
   useEffect(() => {
@@ -269,6 +277,21 @@ export default function Game() {
         case 'chat_message':
           if (chatMessageHandler) chatMessageHandler(data);
           break;
+        case 'takeback_request':
+          setTakebackOffer(data);
+          setShowTakebackModal(true);
+          break;
+        case 'takeback_accepted':
+          // Reload game state after takeback
+          dispatch({
+            type: 'STATE_SNAPSHOT',
+            payload: { fen: data.fen, check: null, white_time: state.whiteTime, black_time: state.blackTime, last_move: null }
+          });
+          setShowTakebackModal(false);
+          setTakebackOffer(null);
+          setError('Takeback accepted');
+          setTimeout(() => setError(null), 3000);
+          break;
         case 'error':
           setMoveInProgress(false);
           setError(data.message);
@@ -285,6 +308,69 @@ export default function Game() {
   useEffect(() => {
     if (isConnected && send) send({ type: 'join_game' });
   }, [isConnected, send]);
+
+  // Keyboard navigation for move history
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Only handle arrow keys if not typing in an input
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+      const confirmedMoves = state.moves.filter(m => !m.optimistic);
+      const maxIndex = confirmedMoves.length - 1;
+
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        setViewingMoveIndex(prev => {
+          if (prev === null) {
+            // Currently at live position, go to last move
+            const newIndex = maxIndex;
+            reconstructBoardAtMove(newIndex);
+            return newIndex;
+          } else if (prev > 0) {
+            const newIndex = prev - 1;
+            reconstructBoardAtMove(newIndex);
+            return newIndex;
+          }
+          return prev;
+        });
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        setViewingMoveIndex(prev => {
+          if (prev === null) return null; // Already at live position
+          if (prev >= maxIndex) {
+            // Go back to live position
+            setHistoricalBoard(null);
+            return null;
+          }
+          const newIndex = prev + 1;
+          reconstructBoardAtMove(newIndex);
+          return newIndex;
+        });
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [state.moves]);
+
+  // Helper to reconstruct board at a specific move index
+  const reconstructBoardAtMove = useCallback((moveIndex) => {
+    const confirmedMoves = state.moves.filter(m => !m.optimistic);
+    const board = new Board(); // Start from initial position
+
+    // Replay moves up to the target index
+    for (let i = 0; i <= moveIndex && i < confirmedMoves.length; i++) {
+      const move = confirmedMoves[i];
+      const piece = board.getPiece(move.from);
+      if (piece) {
+        board.board[move.to] = piece;
+        delete board.board[move.from];
+        board.turn = move.color === 'white' ? 'black' : 'white';
+      }
+    }
+
+    setHistoricalBoard(board);
+  }, [state.moves]);
 
   // --- 5. Game Actions ---
   const executeMove = useCallback((from, to, promotion = null) => {
@@ -356,7 +442,14 @@ export default function Game() {
   }, [pendingMove, executeMove]);
 
   // Controls Handlers
-  const handleMoveClick = (index) => send && send({ type: 'jump_to_move', payload: { move_index: index } });
+  const handleMoveClick = (index) => {
+    setViewingMoveIndex(index);
+    reconstructBoardAtMove(index);
+  };
+  const handleReturnToLive = () => {
+    setViewingMoveIndex(null);
+    setHistoricalBoard(null);
+  };
   const handleResign = () => resignMutation.mutate();
   const handleOfferDraw = () => send && send({ type: 'offer_draw' });
   const handleRequestTakeback = () => send && send({ type: 'request_takeback' });
@@ -370,6 +463,17 @@ export default function Game() {
     setShowDrawOfferModal(false);
     setDrawOffer(null);
   };
+  const handleAcceptTakeback = () => {
+    if (send) send({ type: 'accept_takeback' });
+    setShowTakebackModal(false);
+    setTakebackOffer(null);
+  };
+  const handleDeclineTakeback = () => {
+    setShowTakebackModal(false);
+    setTakebackOffer(null);
+  };
+  const handleOpenSettings = () => setShowSettings(true);
+  const handleCloseSettings = () => setShowSettings(false);
 
   const getValidMoves = useCallback((square) => validator.getPieceMoves(square), [validator]);
   const registerChatHandler = useCallback((handler) => setChatMessageHandler(() => handler), []);
@@ -389,7 +493,7 @@ export default function Game() {
   const isWhitePerspective = state.playerColor === 'white';
 
   return (
-    <div className="container mx-auto max-w-7xl game-layout-strict min-h-screen flex flex-col py-4 px-4 overflow-hidden">
+    <div className="h-[calc(100vh-140px)] bg-[#312e2b] flex flex-col overflow-hidden">
       {connectionError && (
         <div className="fixed top-20 right-6 bg-orange-500/90 text-white px-6 py-3 rounded-lg shadow-lg z-50">
           {connectionError}
@@ -404,22 +508,62 @@ export default function Game() {
         </div>
       )}
 
-      {/* Added min-h-0 here to ensure grid children don't stretch indefinitely */}
-      <div className="grid grid-cols-1 xl:grid-cols-[minmax(280px,320px)_minmax(0,1fr)_minmax(250px,280px)] gap-4 flex-1 overflow-hidden min-h-0">
+      {/* Main Game Area - Lichess Style */}
+      <div className="flex-1 flex items-center justify-center p-2 gap-2">
+        {/* Left: Chat - Narrow, attached to board */}
+        <div className="w-[220px] h-full flex flex-col bg-[#272522] rounded shadow-lg overflow-hidden">
+          <ChatBox
+            gameId={gameId}
+            isPlayerChat={!state.isSpectator}
+            currentUser={user}
+            websocketSend={send}
+            onMessage={registerChatHandler}
+          />
+        </div>
 
-        {/* LEFT COLUMN: Chat & Controls */}
-        <div className="flex flex-col space-y-4 order-2 xl:order-1 overflow-hidden">
-          <div className="flex-shrink-0 h-64">
-            <ChatBox
-              gameId={gameId}
-              isPlayerChat={!state.isSpectator}
-              currentUser={user}
-              websocketSend={send}
-              onMessage={registerChatHandler}
+        {/* Center: Chess Board - The Focus */}
+        <div className="aspect-square h-full max-h-full relative">
+          <div className="w-full h-full">
+            <ChessBoard
+              gameState={{
+                board: historicalBoard ? historicalBoard.board : state.board.board,
+                turn: historicalBoard ? historicalBoard.turn : state.board.turn,
+                check: state.check,
+                status: state.status,
+                winner: state.winner,
+                lastMove: viewingMoveIndex !== null ? {
+                  from: state.moves[viewingMoveIndex]?.from,
+                  to: state.moves[viewingMoveIndex]?.to
+                } : state.lastMove,
+              }}
+              onMove={handleMove}
+              isSpectator={state.isSpectator}
+              playerColor={state.playerColor}
+              getValidMoves={getValidMoves}
+              boardTheme={boardTheme}
+              pieceSet={pieceSet}
+              isViewingHistory={viewingMoveIndex !== null}
             />
           </div>
 
-          <GameClock
+          {/* Viewing History Indicator - Subtle pill at top */}
+          {viewingMoveIndex !== null && (
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-black/70 backdrop-blur-sm text-white/90 px-4 py-1.5 rounded-full shadow-lg z-10">
+              <span className="text-xs font-medium">Move {viewingMoveIndex + 1}</span>
+              <button
+                onClick={handleReturnToLive}
+                className="text-xs bg-green-600 hover:bg-green-500 text-white px-2 py-0.5 rounded-full font-semibold transition-colors"
+              >
+                LIVE
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Right: Clocks, History, Controls - Narrow */}
+        <div className="w-[220px] h-full flex flex-col gap-1">
+          {/* Top Clock - Opponent */}
+          <CompactPlayerClock
             initialTime={isWhitePerspective ? state.blackTime : state.whiteTime}
             increment={state.increment}
             isActive={state.status === 'ongoing' && state.turn !== state.playerColor}
@@ -428,13 +572,28 @@ export default function Game() {
             playerRating={isWhitePerspective ? state.blackPlayer?.rating : state.whitePlayer?.rating}
           />
 
-          <div className="bg-white/5 backdrop-blur-lg rounded-xl border border-white/10 p-4 flex-shrink-0">
-            <CapturedPieces
-              capturedPieces={state.capturedPieces}
-              color={isWhitePerspective ? 'black' : 'white'}
+          {/* Move History - Takes most space */}
+          <div className="flex-1 bg-[#1e1c1a] rounded shadow-lg overflow-hidden min-h-0">
+            <MoveHistory
+              moves={state.moves.filter(m => !m.optimistic)}
+              currentMoveIndex={state.moves.length - 1}
+              onMoveClick={handleMoveClick}
+              viewingMoveIndex={viewingMoveIndex}
+              onReturnToLive={handleReturnToLive}
             />
           </div>
 
+          {/* Bottom Clock - Player */}
+          <CompactPlayerClock
+            initialTime={isWhitePerspective ? state.whiteTime : state.blackTime}
+            increment={state.increment}
+            isActive={state.status === 'ongoing' && state.turn === state.playerColor}
+            color={state.playerColor}
+            playerName={isWhitePerspective ? state.whitePlayer?.username : state.blackPlayer?.username}
+            playerRating={isWhitePerspective ? state.whitePlayer?.rating : state.blackPlayer?.rating}
+          />
+
+          {/* Controls - Compact */}
           <GameControls
             isSpectator={state.isSpectator}
             onResign={handleResign}
@@ -444,62 +603,65 @@ export default function Game() {
             drawOfferReceived={showDrawOfferModal}
             onAcceptDraw={handleAcceptDraw}
             onDeclineDraw={handleDeclineDraw}
+            onOpenSettings={handleOpenSettings}
           />
-        </div>
-
-        {/* MIDDLE COLUMN: The Board */}
-        {/* Added min-h-0 to explicitly bound the flex container */}
-        <div className="flex items-center justify-center order-1 xl:order-2 min-h-0 overflow-hidden p-2">
-          {/* Constrained max width so the board never blows past vertical viewport */}
-          <div className="w-full max-w-[80vh] aspect-square">
-            <ChessBoard
-              gameState={{
-                board: state.board.board,
-                turn: state.board.turn,
-                check: state.check,
-                status: state.status,
-                winner: state.winner,
-                lastMove: state.lastMove,
-              }}
-              onMove={handleMove}
-              isSpectator={state.isSpectator}
-              playerColor={state.playerColor}
-              getValidMoves={getValidMoves}
-            />
-          </div>
-        </div>
-
-        {/* RIGHT COLUMN: History & Player Clock */}
-        {/* Changed overflow-y-auto to overflow-hidden so child flex containers control scroll */}
-        <div className="flex flex-col space-y-4 order-3 xl:order-3 overflow-hidden">
-          <GameClock
-            initialTime={isWhitePerspective ? state.whiteTime : state.blackTime}
-            increment={state.increment}
-            isActive={state.status === 'ongoing' && state.turn === state.playerColor}
-            color={state.playerColor}
-            playerName={isWhitePerspective ? state.whitePlayer?.username : state.blackPlayer?.username}
-            playerRating={isWhitePerspective ? state.whitePlayer?.rating : state.blackPlayer?.rating}
-          />
-
-          <div className="bg-white/5 backdrop-blur-lg rounded-xl border border-white/10 p-4 flex-shrink-0">
-            <CapturedPieces
-              capturedPieces={state.capturedPieces}
-              color={state.playerColor}
-            />
-          </div>
-
-          {/* Required absolute bounds (flex-1 min-h-0 flex flex-col) for Virtuoso to calculate height */}
-          <div className="flex-1 min-h-0 flex flex-col">
-            <MoveHistory
-              moves={state.moves.filter(m => !m.optimistic)}
-              currentMoveIndex={state.moves.length - 1} // simplified for reducer approach
-              onMoveClick={handleMoveClick}
-            />
-          </div>
         </div>
       </div>
 
       {/* Modals */}
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <div
+          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center"
+          onClick={handleCloseSettings}
+        >
+          <div
+            className="bg-[#272522] rounded-lg p-4 shadow-2xl w-64"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-white font-semibold">Board Settings</h3>
+              <button
+                onClick={handleCloseSettings}
+                className="text-white/50 hover:text-white"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-white/70 text-sm block mb-1">Board Theme</label>
+                <select
+                  value={boardTheme}
+                  onChange={(e) => setBoardTheme(e.target.value)}
+                  className="w-full bg-[#312e2b] border border-white/20 text-white rounded px-3 py-2 text-sm"
+                >
+                  <option value="brown">Brown</option>
+                  <option value="blue">Blue</option>
+                  <option value="green">Green</option>
+                  <option value="purple">Purple</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-white/70 text-sm block mb-1">Piece Set</label>
+                <select
+                  value={pieceSet}
+                  onChange={(e) => setPieceSet(e.target.value)}
+                  className="w-full bg-[#312e2b] border border-white/20 text-white rounded px-3 py-2 text-sm"
+                >
+                  <option value="cburnett">Classic</option>
+                  <option value="alpha">Alpha</option>
+                  <option value="merida">Merida</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showDrawOfferModal && (
         <DrawOfferModal
           isOpen={showDrawOfferModal}
@@ -513,6 +675,14 @@ export default function Game() {
         isOpen={showPromotionModal}
         color={state.playerColor}
         onSelect={handlePromotion}
+      />
+
+      {/* Takeback Request Modal */}
+      <TakebackModal
+        isOpen={showTakebackModal}
+        offerFrom={takebackOffer}
+        onAccept={handleAcceptTakeback}
+        onDecline={handleDeclineTakeback}
       />
 
       {showGameEndedModal && (
@@ -589,6 +759,39 @@ function DrawOfferModal({ isOpen, offerFrom, onAccept, onDecline }) {
             className="flex-1 px-6 py-3 rounded-lg font-semibold bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white transition-all"
           >
             Accept Draw
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TakebackModal({ isOpen, offerFrom, onAccept, onDecline }) {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50">
+      <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl border-2 border-blue-500/50 shadow-2xl p-8 max-w-md w-full mx-4">
+        <div className="text-center mb-6">
+          <RotateCcw className="w-16 h-16 text-blue-400 mx-auto mb-4" />
+          <h2 className="text-2xl font-bold text-white mb-2">Takeback Request</h2>
+          <p className="text-white/80">
+            {offerFrom?.username} requests a takeback
+          </p>
+        </div>
+
+        <div className="flex space-x-4">
+          <button
+            onClick={onDecline}
+            className="flex-1 px-6 py-3 rounded-lg font-semibold bg-white/10 hover:bg-white/20 text-white transition-all"
+          >
+            Decline
+          </button>
+          <button
+            onClick={onAccept}
+            className="flex-1 px-6 py-3 rounded-lg font-semibold bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white transition-all"
+          >
+            Accept Takeback
           </button>
         </div>
       </div>

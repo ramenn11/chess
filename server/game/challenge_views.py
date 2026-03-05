@@ -142,7 +142,7 @@ def accept_challenge(request, challenge_id):
     challenge.game = game
     challenge.save()
     
-    # 🔥 NOTIFY BOTH PLAYERS via WebSocket
+    # NOTIFY BOTH PLAYERS via WebSocket
     notification = {
         'type': 'challenge_accepted',
         'game_id': game.game_id,

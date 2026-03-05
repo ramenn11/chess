@@ -1,5 +1,5 @@
 import React from "react";
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Navbar from './components/layout/NavBar';
 import Sidebar from './components/layout/Sidebar';
 import Footer from './components/layout/Footer';
@@ -40,12 +40,15 @@ function AppRouter() {
 function MainLayout() {
   useUserNotifications();
 
+  const location = useLocation();
+  const isGameRoute = /^\/game\//.test(location.pathname) || /^\/bot\//.test(location.pathname);
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+    <div className={`min-h-screen ${isGameRoute ? 'bg-[#312e2b]' : 'bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900'}`}>
       <Navbar />
       <div className="flex">
-        <Sidebar />
-        <main className="flex-1 p-6">
+        {!isGameRoute && <Sidebar />}
+        <main className={`flex-1 ${isGameRoute ? 'p-0' : 'p-6'}`}>
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/game/:gameId" element={<Game />} />
