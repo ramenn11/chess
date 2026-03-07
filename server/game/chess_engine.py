@@ -558,3 +558,67 @@ class ChessEngine:
         new_engine.full_moves = self.full_moves
         
         return new_engine
+
+    def play_uci_move(self, uci_move):
+        """
+        Parses a UCI string (e.g., 'e2e4' or 'e7e8q') and executes it.
+        Returns the move result dictionary if valid, or False if invalid.
+        """
+        if len(uci_move) < 4:
+            return False
+            
+        from_sq = uci_move[:2]
+        to_sq = uci_move[2:4]
+        promotion = uci_move[4:] if len(uci_move) == 5 else None
+        
+        # Translate promotion character to piece type for engine
+        promo_map = {'q': 'queen', 'r': 'rook', 'b': 'bishop', 'n': 'knight'}
+        if promotion and promotion in promo_map:
+            promotion = promo_map[promotion]
+            
+        if self.is_valid_move(from_sq, to_sq, promotion):
+            return self.make_move(from_sq, to_sq, promotion)
+            
+        return False
+
+    @classmethod
+    def from_move_list(cls, move_list, initial_fen='rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'):
+        """
+        Utility to completely reconstruct a game state from a list of UCI moves.
+        Perfect for spectators joining mid-game or actor crash recovery.
+        """
+        engine = cls(fen=initial_fen)
+        
+        for uci in move_list:
+            result = engine.play_uci_move(uci)
+            if not result:
+                raise ValueError(f"Invalid move '{uci}' found in move history.")
+                
+        return engine
+
+    def get_legal_uci_moves(self, color):
+        """
+        Generates a list of all legal UCI moves for the given color.
+        """
+        legal_moves = []
+        for square, piece in self.board.items():
+            if piece['color'] == color:
+                moves = self.get_piece_moves(square)
+                for to_sq in moves:
+                    # Simulate move to ensure it doesn't leave king in check
+                    test_board = self.copy()
+                    test_board.make_move_unsafe(square, to_sq, None)
+                    king_sq = test_board.find_king(color)
+                    
+                    if not test_board.is_square_attacked(king_sq, color):
+                        # Handle basic UCI formatting
+                        legal_moves.append(f"{square}{to_sq}")
+                        
+                        # Add promotion variations if it's a pawn reaching the end
+                        if piece['type'] == 'pawn':
+                            rank = int(to_sq[1])
+                            if (color == 'white' and rank == 8) or (color == 'black' and rank == 1):
+                                legal_moves.remove(f"{square}{to_sq}") # Remove the unpromoted move
+                                legal_moves.extend([f"{square}{to_sq}q", f"{square}{to_sq}r", f"{square}{to_sq}b", f"{square}{to_sq}n"])
+                                
+        return legal_moves

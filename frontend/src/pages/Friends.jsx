@@ -178,8 +178,8 @@ function Friends() {
         <button
           onClick={() => setActiveTab('friends')}
           className={`flex items-center space-x-2 px-6 py-3 rounded-lg font-medium transition-all ${activeTab === 'friends'
-              ? 'bg-purple-600 text-white'
-              : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white'
+            ? 'bg-purple-600 text-white'
+            : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white'
             }`}
         >
           <Users className="w-5 h-5" />
@@ -188,8 +188,8 @@ function Friends() {
         <button
           onClick={() => setActiveTab('requests')}
           className={`flex items-center space-x-2 px-6 py-3 rounded-lg font-medium transition-all ${activeTab === 'requests'
-              ? 'bg-purple-600 text-white'
-              : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white'
+            ? 'bg-purple-600 text-white'
+            : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white'
             }`}
         >
           <UserPlus className="w-5 h-5" />
@@ -198,8 +198,8 @@ function Friends() {
         <button
           onClick={() => setActiveTab('search')}
           className={`flex items-center space-x-2 px-6 py-3 rounded-lg font-medium transition-all ${activeTab === 'search'
-              ? 'bg-purple-600 text-white'
-              : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white'
+            ? 'bg-purple-600 text-white'
+            : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white'
             }`}
         >
           <Search className="w-5 h-5" />

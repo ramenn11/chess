@@ -13,7 +13,7 @@ function Spectate() {
 
   useEffect(() => {
     fetchLiveGames();
-    
+
     // Poll for updates every 10 seconds
     const interval = setInterval(fetchLiveGames, 10000);
     return () => clearInterval(interval);
@@ -21,46 +21,9 @@ function Spectate() {
 
   const fetchLiveGames = async () => {
     try {
-      // TODO: Replace with actual API endpoint
-      const response = await api.get('/game/games', {
-        params: { status: 'ongoing' }
-      });
-      
-      // Mock data for now
-      const mockGames = [
-        {
-          game_id: '1',
-          white_player: { username: 'GrandMaster99', rating: 2450 },
-          black_player: { username: 'ChessMaster', rating: 2380 },
-          time_control: '10+0',
-          move_count: 23,
-          spectators: 1247,
-          white_time_left: 245000,
-          black_time_left: 312000,
-        },
-        {
-          game_id: '2',
-          white_player: { username: 'QueenGambit', rating: 2210 },
-          black_player: { username: 'KnightRider', rating: 2190 },
-          time_control: '5+0',
-          move_count: 18,
-          spectators: 856,
-          white_time_left: 156000,
-          black_time_left: 198000,
-        },
-        {
-          game_id: '3',
-          white_player: { username: 'RookMaster', rating: 1950 },
-          black_player: { username: 'BishopBrawler', rating: 1920 },
-          time_control: '3+2',
-          move_count: 31,
-          spectators: 423,
-          white_time_left: 98000,
-          black_time_left: 112000,
-        },
-      ];
-      
-      setLiveGames(mockGames);
+      // Hits the new Redis-enriched endpoint
+      const response = await api.get('/game/games/live/lobby/');
+      setLiveGames(response.data);
     } catch (error) {
       console.error('Failed to fetch live games:', error);
     } finally {
@@ -158,21 +121,19 @@ function Spectate() {
         <div className="flex items-center space-x-2 bg-white/10 border border-white/20 rounded-lg p-1">
           <button
             onClick={() => setSortBy('viewers')}
-            className={`px-4 py-2 rounded-lg font-medium transition-all ${
-              sortBy === 'viewers'
+            className={`px-4 py-2 rounded-lg font-medium transition-all ${sortBy === 'viewers'
                 ? 'bg-purple-600 text-white'
                 : 'text-white/60 hover:text-white'
-            }`}
+              }`}
           >
             Most Viewed
           </button>
           <button
             onClick={() => setSortBy('rating')}
-            className={`px-4 py-2 rounded-lg font-medium transition-all ${
-              sortBy === 'rating'
+            className={`px-4 py-2 rounded-lg font-medium transition-all ${sortBy === 'rating'
                 ? 'bg-purple-600 text-white'
                 : 'text-white/60 hover:text-white'
-            }`}
+              }`}
           >
             Top Rated
           </button>

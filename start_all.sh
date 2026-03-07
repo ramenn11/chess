@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Chess Platform - Master Startup Script (uv-based)
-# Runs: Daphne + Bot Django + Celery Worker + Celery Beat
+# Runs: Daphne (Main + Actors) + Bot Django
 
 set -e
 
@@ -34,16 +34,12 @@ mkdir -p "$LOG_DIR"
 
 MAIN_SERVER_LOG="$LOG_DIR/main_server.log"
 BOT_SERVER_LOG="$LOG_DIR/bot_server.log"
-CELERY_WORKER_LOG="$LOG_DIR/celery_worker.log"
-CELERY_BEAT_LOG="$LOG_DIR/celery_beat.log"
 
 # -----------------------------
 # PIDs
 # -----------------------------
 MAIN_SERVER_PID="$LOG_DIR/main_server.pid"
 BOT_SERVER_PID="$LOG_DIR/bot_server.pid"
-CELERY_WORKER_PID="$LOG_DIR/celery_worker.pid"
-CELERY_BEAT_PID="$LOG_DIR/celery_beat.pid"
 
 # -----------------------------
 # Cleanup
@@ -53,9 +49,7 @@ cleanup() {
 
     for pidfile in \
         "$MAIN_SERVER_PID" \
-        "$BOT_SERVER_PID" \
-        "$CELERY_WORKER_PID" \
-        "$CELERY_BEAT_PID"
+        "$BOT_SERVER_PID"
     do
         if [ -f "$pidfile" ]; then
             kill "$(cat "$pidfile")" 2>/dev/null || true
@@ -80,11 +74,12 @@ check_prerequisites() {
         exit 1
     fi
 
-    # if ! redis-cli ping >/dev/null 2>&1; then
-    #     echo -e "${YELLOW}Redis not running. Starting Redis...${NC}"
-    #     redis-server --daemonize yes
-    #     sleep 2
-    # fi
+    # Redis is strictly required for Matchmaking & Actor State
+    if ! redis-cli ping >/dev/null 2>&1; then
+        echo -e "${YELLOW}Redis not running. Starting Redis...${NC}"
+        redis-server --daemonize yes
+        sleep 2
+    fi
 
     echo -e "${GREEN}Prerequisites OK${NC}"
 }
@@ -111,6 +106,7 @@ start_main_server() {
     echo -e "${BLUE}Starting Daphne (port $MAIN_SERVER_PORT)...${NC}"
     cd "$SERVER_DIR"
 
+    # Daphne will automatically spin up the Actor System within its workers
     uv run daphne -p $MAIN_SERVER_PORT core.asgi:application \
         > "$MAIN_SERVER_LOG" 2>&1 &
 
@@ -127,26 +123,6 @@ start_bot_server() {
     echo $! > "$BOT_SERVER_PID"
 }
 
-start_celery_worker() {
-    echo -e "${BLUE}Starting Celery worker...${NC}"
-    cd "$SERVER_DIR"
-
-    uv run celery -A core worker -l info \
-        > "$CELERY_WORKER_LOG" 2>&1 &
-
-    echo $! > "$CELERY_WORKER_PID"
-}
-
-start_celery_beat() {
-    echo -e "${BLUE}Starting Celery beat...${NC}"
-    cd "$SERVER_DIR"
-
-    uv run celery -A core beat -l info \
-        > "$CELERY_BEAT_LOG" 2>&1 &
-
-    echo $! > "$CELERY_BEAT_PID"
-}
-
 # -----------------------------
 # Monitor
 # -----------------------------
@@ -160,16 +136,13 @@ monitor_services() {
     echo "Logs:"
     echo "  tail -f $MAIN_SERVER_LOG"
     echo "  tail -f $BOT_SERVER_LOG"
-    echo "  tail -f $CELERY_WORKER_LOG"
     echo -e "${YELLOW}Ctrl+C to stop${NC}"
 
     while true; do
         sleep 1
         for pidfile in \
             "$MAIN_SERVER_PID" \
-            "$BOT_SERVER_PID" \
-            "$CELERY_WORKER_PID" \
-            "$CELERY_BEAT_PID"
+            "$BOT_SERVER_PID"
         do
             if [ -f "$pidfile" ]; then
                 kill -0 "$(cat "$pidfile")" 2>/dev/null || cleanup
@@ -191,10 +164,6 @@ main() {
     start_main_server
     sleep 2
     start_bot_server
-    sleep 2
-    start_celery_worker
-    sleep 2
-    start_celery_beat
     monitor_services
 }
 

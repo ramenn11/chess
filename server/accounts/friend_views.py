@@ -7,7 +7,7 @@ from django.db.models import Q
 from django.contrib.auth import get_user_model
 from .models import Friendship, FriendRequest
 from .friend_serializers import FriendshipSerializer, FriendRequestSerializer, FriendUserSerializer
-from game.redis_pubsub import notify_user_via_channel
+from .redis_pubsub import notify_user_via_channel
 
 User = get_user_model()
 

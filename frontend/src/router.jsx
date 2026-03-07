@@ -18,6 +18,7 @@ import Spectate from './pages/Spectate';
 
 import { AuthProvider } from "./context/AuthContext";
 import useUserNotifications from './hooks/useUserNotifications';
+import SpectatorView from './components/spectate/SpectatorView';
 
 function AppRouter() {
   return (
@@ -41,7 +42,9 @@ function MainLayout() {
   useUserNotifications();
 
   const location = useLocation();
-  const isGameRoute = /^\/game\//.test(location.pathname) || /^\/bot\//.test(location.pathname);
+  const isGameRoute = /^\/game\//.test(location.pathname) ||
+    /^\/bot\//.test(location.pathname) ||
+    /^\/spectate\//.test(location.pathname);
 
   return (
     <div className={`min-h-screen ${isGameRoute ? 'bg-[#312e2b]' : 'bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900'}`}>
@@ -56,6 +59,7 @@ function MainLayout() {
             <Route path="/lobby" element={<Lobby />} />
             <Route path="/friends" element={<Friends />} />
             <Route path="/spectate" element={<Spectate />} />
+            <Route path="/spectate/:gameId" element={<SpectatorView />} />
             <Route path="/profile/:username" element={<Profile />} />
             <Route path="/404" element={<NotFound />} />
             <Route path="/bot" element={<BotGame />} />

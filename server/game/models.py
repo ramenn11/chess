@@ -22,24 +22,20 @@ class Game(models.Model):
     white_player = models.ForeignKey(User, on_delete=models.CASCADE, related_name='games_as_white')
     black_player = models.ForeignKey(User, on_delete=models.CASCADE, related_name='games_as_black')
     
-    time_control = models.CharField(max_length=10)  # e.g., "5+0", "10+5"
-    initial_time = models.IntegerField()  # in seconds
-    increment = models.IntegerField()  # in seconds
-    
-    white_time_left = models.IntegerField()  # in milliseconds
-    black_time_left = models.IntegerField()  # in milliseconds
+    time_control = models.CharField(max_length=10)
+    initial_time = models.IntegerField()
+    increment = models.IntegerField()
     
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='waiting')
     result = models.CharField(max_length=10, choices=RESULT_CHOICES, default='*')
     winner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='won_games')
-    termination = models.CharField(max_length=50, blank=True)  # checkmate, resignation, timeout, etc.
+    termination = models.CharField(max_length=50, blank=True)
     
-    current_fen = models.TextField(default='rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1')
     initial_fen = models.TextField(default='rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1')
-    pgn = models.TextField(blank=True)
+    final_fen = models.TextField(blank=True, null=True) 
+    pgn = models.TextField(blank=True, help_text="Generated and saved only when the game concludes.")
     
-    move_count = models.IntegerField(default=0)
-    current_turn = models.CharField(max_length=5, default='white')
+    move_history = models.JSONField(default=list, blank=True, help_text="List of UCI moves saved at game end.")
     
     created_at = models.DateTimeField(default=timezone.now)
     started_at = models.DateTimeField(null=True, blank=True)
@@ -50,76 +46,22 @@ class Game(models.Model):
     white_rating_after = models.IntegerField(null=True, blank=True)
     black_rating_after = models.IntegerField(null=True, blank=True)
     
-    spectator_count = models.IntegerField(default=0)
-    
     class Meta:
         db_table = 'games'
         ordering = ['-created_at']
         
     def __str__(self):
         return f"{self.game_id} - {self.white_player.username} vs {self.black_player.username}"
-    
+
     @classmethod
     def generate_game_id(cls):
         timestamp = timezone.now().strftime('%Y%m%d%H%M%S')
         random_str = uuid.uuid4().hex[:8]
         return f"{timestamp}_{random_str}"
-    
-    def get_duration(self):
-        if self.started_at and self.ended_at:
-            return (self.ended_at - self.started_at).total_seconds()
-        return 0
-
-
-class Move(models.Model):
-    game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name='moves')
-    move_number = models.IntegerField()
-    color = models.CharField(max_length=5)  # 'white' or 'black'
-    
-    from_square = models.CharField(max_length=2)  # e.g., 'e2'
-    to_square = models.CharField(max_length=2)  # e.g., 'e4'
-    
-    piece = models.CharField(max_length=10)  # 'pawn', 'knight', etc.
-    captured_piece = models.CharField(max_length=10, blank=True)
-    promotion = models.CharField(max_length=10, blank=True)
-    
-    is_check = models.BooleanField(default=False)
-    is_checkmate = models.BooleanField(default=False)
-    is_castling = models.BooleanField(default=False)
-    is_en_passant = models.BooleanField(default=False)
-    
-    algebraic_notation = models.CharField(max_length=10)  # e.g., 'Nf3', 'e4', 'O-O'
-    fen_after = models.TextField()
-    
-    time_spent = models.IntegerField()  # milliseconds spent on this move
-    time_left = models.IntegerField()  # milliseconds left after move
-    
-    created_at = models.DateTimeField(default=timezone.now)
-    
-    class Meta:
-        db_table = 'moves'
-        ordering = ['move_number', 'id']
-        unique_together = ['game', 'move_number', 'color']
-        
-    def __str__(self):
-        return f"{self.game.game_id} - Move {self.move_number}: {self.algebraic_notation}"
-
-
-class MatchmakingQueue(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
-    time_control = models.CharField(max_length=10)
-    rating = models.IntegerField()
-    joined_at = models.DateTimeField(default=timezone.now)
-    
-    class Meta:
-        db_table = 'matchmaking_queue'
-        ordering = ['joined_at']
-        
-    def __str__(self):
-        return f"{self.user.username} - {self.time_control}"
 
 
 class GameChallenge(models.Model):
+    """Kept this for asynchronous friend challenges, which still need persistent state."""
     STATUS_CHOICES = [
         ('pending', 'Pending'),
         ('accepted', 'Accepted'),
@@ -133,10 +75,7 @@ class GameChallenge(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     game = models.ForeignKey(Game, on_delete=models.SET_NULL, null=True, blank=True, related_name='challenge')
     created_at = models.DateTimeField(default=timezone.now)
-    expires_at = models.DateTimeField()  # Auto-reject after 2 minutes
+    expires_at = models.DateTimeField()
     
     class Meta:
         db_table = 'game_challenges'
-        
-    def __str__(self):
-        return f"{self.challenger.username} -> {self.challenged.username}"

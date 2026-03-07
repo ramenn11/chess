@@ -1,29 +1,50 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
-function CompactPlayerClock({ 
-  initialTime, 
-  increment, 
-  isActive, 
-  color, 
-  playerName, 
+function CompactPlayerClock({
+  initialTime,
+  increment,
+  isActive,
+  color,
+  playerName,
   playerRating,
   isTop = false
 }) {
   const [timeLeft, setTimeLeft] = useState(initialTime);
 
+  // Track the exact timestamp when the clock started/updated
+  const lastUpdateRef = useRef(Date.now());
+  // Track the exact time remaining at that moment
+  const baseTimeRef = useRef(initialTime);
+
+  // Sync state when the server pushes a new initialTime (e.g., after a move)
   useEffect(() => {
     setTimeLeft(initialTime);
+    baseTimeRef.current = initialTime;
+    lastUpdateRef.current = Date.now();
   }, [initialTime]);
 
+  // Handle the active countdown using real elapsed time
   useEffect(() => {
     if (!isActive || timeLeft <= 0) return;
 
+    // Reset our reference points exactly when the clock becomes active
+    baseTimeRef.current = timeLeft;
+    lastUpdateRef.current = Date.now();
+
     const timer = setInterval(() => {
-      setTimeLeft((prev) => Math.max(0, prev - 100));
-    }, 100);
+      const now = Date.now();
+      const elapsed = now - lastUpdateRef.current;
+      const newTimeLeft = Math.max(0, baseTimeRef.current - elapsed);
+
+      setTimeLeft(newTimeLeft);
+
+      if (newTimeLeft <= 0) {
+        clearInterval(timer);
+      }
+    }, 50); // Lowered to 50ms for much smoother visual rendering on deciseconds
 
     return () => clearInterval(timer);
-  }, [isActive, timeLeft]);
+  }, [isActive]); // Note: timeLeft is NO LONGER a dependency!
 
   const formatTime = (ms) => {
     const totalSeconds = Math.floor(ms / 1000);

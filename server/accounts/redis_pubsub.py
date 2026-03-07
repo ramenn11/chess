@@ -12,20 +12,6 @@ redis_client = redis.Redis(
     decode_responses=True
 )
 
-def publish_challenge_event(event_type, challenge_id, data):
-    """
-    Publish challenge events to Redis
-    event_type: 'accepted', 'rejected', 'expired'
-    """
-    channel = f"challenge_{challenge_id}"
-    payload = {
-        'event': event_type,
-        'challenge_id': challenge_id,
-        'data': data,
-        'timestamp': str(data.get('timestamp', ''))
-    }
-    redis_client.publish(channel, json.dumps(payload))
-
 def notify_user_via_channel(user_id, message):
     """Send WebSocket notification to specific user"""
     channel_layer = get_channel_layer()

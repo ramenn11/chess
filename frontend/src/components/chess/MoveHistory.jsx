@@ -41,7 +41,13 @@ function MoveHistory({ moves, currentMoveIndex, onMoveClick, viewingMoveIndex, o
   };
 
   const formatMove = (move) => {
+    // standard algebraic notation
     if (move.notation) return move.notation;
+
+    // Fall back to the raw UCI string
+    if (move.uci) return move.uci;
+
+    // backwards comp
     return `${move.from}-${move.to}`;
   };
 

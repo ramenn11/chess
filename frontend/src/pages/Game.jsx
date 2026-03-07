@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback, useReducer, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
 import useWebSocket from '../services/socketService';
-import gameService from '../services/gameService'; // Ensure this service exists in your project
+import gameService from '../services/gameService';
 import { Handshake, Loader2, Trophy, RotateCcw } from 'lucide-react';
 
 import ChessBoard from '../components/chess/ChessBoard';
@@ -17,7 +17,7 @@ import Board from '../chess/Board';
 import MoveValidator from '../chess/MoveValidator';
 import useSound from '../hooks/useSound';
 
-// --- 1. Unified Game Reducer ---
+// unified game reducer
 const initialGameState = {
   board: new Board(),
   turn: 'white',
@@ -42,22 +42,42 @@ function gameReducer(state, action) {
   switch (action.type) {
     case 'INIT_GAME': {
       const { data, user } = action.payload;
-      const isWhite = user?.id === data.white_player?.id;
-      const isBlack = user?.id === data.black_player?.id;
-      const board = new Board(data.fen || data.current_fen);
+      const isWhite = user?.id === data.white_player_id || user?.id === data.white_player?.id;
+      const isBlack = user?.id === data.black_player_id || user?.id === data.black_player?.id;
+      const board = new Board(data.initial_fen || data.fen || data.current_fen);
 
-      // Calculate captured pieces from initial moves
       const captured = { white: [], black: [] };
-      const serverMoves = (data.moves || []).map(m => {
-        if (m.captured) {
-          captured[m.color === 'white' ? 'white' : 'black'].push(m.captured);
+      const parsedMoves = [];
+
+      // Handle BOTH Redis MoveNodes array AND Postgres string array (backward compatible)
+      const moveHistoryArray = data.moves
+        ? data.moves.map(m => typeof m === 'string' ? m : m.uci)
+        : (data.move_history || []);
+
+      // Replay UCI strings to rebuild move history and board state
+      for (let i = 0; i < moveHistoryArray.length; i++) {
+        const uci = moveHistoryArray[i];
+        const from = uci.substring(0, 2);
+        const to = uci.substring(2, 4);
+        const color = i % 2 === 0 ? 'white' : 'black';
+        const promotion = uci.length === 5 ? uci[4] : null;
+
+        const piece = board.getPiece(from);
+        const capturedPiece = board.getPiece(to);
+
+        if (capturedPiece) {
+          captured[color].push(capturedPiece.type);
         }
-        return {
-          from: m.from, to: m.to, piece: m.piece, captured: m.captured,
-          notation: m.notation || m.algebraic_notation, color: m.color,
-          timestamp: m.timestamp || Date.now(), sequence: m.sequence || m.move_number,
-        };
-      });
+
+        if (piece) {
+          if (promotion) piece.type = promotion;
+          board.board[to] = piece;
+          delete board.board[from];
+        }
+
+        parsedMoves.push({ from, to, uci, color });
+      }
+      board.turn = moveHistoryArray.length % 2 === 0 ? 'white' : 'black';
 
       return {
         ...state,
@@ -66,46 +86,83 @@ function gameReducer(state, action) {
         check: data.check,
         whitePlayer: data.white_player,
         blackPlayer: data.black_player,
-        whiteTime: data.white_time || data.white_time_left,
-        blackTime: data.black_time || data.black_time_left,
+        whiteTime: data.white_time || data.white_time_left || data.initial_time * 1000,
+        blackTime: data.black_time || data.black_time_left || data.initial_time * 1000,
         increment: data.increment || 0,
         playerColor: isWhite ? 'white' : isBlack ? 'black' : 'white',
         isSpectator: !isWhite && !isBlack,
         status: data.status,
         winner: data.winner,
-        moves: serverMoves,
+        moves: parsedMoves,
         capturedPieces: captured,
-        lastMove: serverMoves.length > 0 ? serverMoves[serverMoves.length - 1] : null,
+        lastMove: parsedMoves.length > 0 ? parsedMoves[parsedMoves.length - 1] : null,
         isInitialized: true,
       };
     }
 
+    case 'SET_PLAYER_METADATA': {
+      const { data, user } = action.payload;
+      const isWhite = user?.id === data.white_player?.id;
+      const isBlack = user?.id === data.black_player?.id;
+
+      return {
+        ...state,
+        whitePlayer: data.white_player,
+        blackPlayer: data.black_player,
+        playerColor: isWhite ? 'white' : isBlack ? 'black' : 'white',
+        isSpectator: !isWhite && !isBlack,
+      };
+    }
+
     case 'OPPONENT_MOVED': {
-      const { moveData, fen, status, winner } = action.payload;
-      const newBoard = new Board(fen || moveData.fen);
+      // Destructure 'move' instead of 'moveData', and remove 'status'/'winner'
+      const { move, white_time, black_time } = action.payload;
+
+      // Extract from/to from the new UCI string (e.g., "e2e4")
+      const fromSq = move.uci.substring(0, 2);
+      const toSq = move.uci.substring(2, 4);
+
+      // Reconstruct the board
+      const newBoard = state.board.clone();
+      const piece = newBoard.getPiece(fromSq);
+      const capturedPiece = newBoard.getPiece(toSq);
+
+      // Handle promotion char if it exists (e.g., "e7e8q")
+      const promotion = move.uci.length === 5 ? move.uci[4] : null;
+      if (promotion && piece) piece.type = promotion;
+
+      if (piece) {
+        newBoard.board[toSq] = piece;
+        delete newBoard.board[fromSq];
+      }
+      newBoard.turn = move.color === 'white' ? 'black' : 'white';
 
       const newCaptured = { ...state.capturedPieces };
-      if (moveData.captured) {
-        newCaptured[moveData.color].push(moveData.captured);
+      if (capturedPiece) {
+        newCaptured[move.color].push(capturedPiece.type);
       }
 
-      const confirmedMoves = state.moves.filter(m => !m.optimistic);
       const newMove = {
-        from: moveData.from, to: moveData.to, piece: moveData.piece,
-        captured: moveData.captured, notation: moveData.notation, color: moveData.color,
-        timestamp: moveData.timestamp || Date.now(), sequence: moveData.sequence,
+        from: fromSq,
+        to: toSq,
+        uci: move.uci,
+        notation: move.notation,
+        color: move.color,
+        time_left: move.time_left,
+        timestamp: move.timestamp || Date.now(),
       };
 
       return {
         ...state,
         board: newBoard,
-        turn: moveData.color === 'white' ? 'black' : 'white',
-        check: moveData.is_check ? (moveData.color === 'white' ? 'black' : 'white') : null,
-        status: moveData.status || status || state.status,
-        winner: moveData.winner || winner || state.winner,
-        moves: [...confirmedMoves, newMove],
+        turn: newBoard.turn,
+        whiteTime: white_time !== undefined ? white_time : state.whiteTime,
+        blackTime: black_time !== undefined ? black_time : state.blackTime,
+        check: move.is_check ? (move.color === 'white' ? 'black' : 'white') : null,
+        // status and winner are removed here—they are now exclusively handled by GAME_ENDED
+        moves: [...state.moves.filter(m => !m.optimistic), newMove],
         capturedPieces: newCaptured,
-        lastMove: { from: moveData.from, to: moveData.to },
+        lastMove: { from: fromSq, to: toSq },
       };
     }
 
@@ -151,7 +208,7 @@ function gameReducer(state, action) {
         ...state,
         status: action.payload.status,
         winner: action.payload.winner,
-        termination: action.payload.reason || action.payload.termination
+        termination: action.payload.termination
       };
 
     default:
@@ -165,23 +222,27 @@ export default function Game() {
   const { playMove, playCheckmate, preloadSounds } = useSound();
   const navigate = useNavigate();
 
-  // --- 2. React Query: Fetch Initial State & Mutations ---
+  // react query: fetch initial state only
   const { data: initialGameData, isLoading: isQueryLoading } = useQuery({
     queryKey: ['game', gameId],
     queryFn: () => gameService.getGame(gameId),
     refetchOnWindowFocus: false,
   });
 
-  const resignMutation = useMutation({
-    mutationFn: () => gameService.resign(gameId),
-    onSuccess: () => send && send({ type: 'resign' }),
-  });
+  // Dispatch ONLY metadata from the REST API
+  useEffect(() => {
+    if (initialGameData?.game) {
+      dispatch({
+        type: 'SET_PLAYER_METADATA',
+        payload: { data: initialGameData.game, user }
+      });
+    }
+  }, [initialGameData, user]);
 
-  // --- 3. Unified State Management ---
+  // Unified State Management
   const [state, dispatch] = useReducer(gameReducer, initialGameState);
   const validator = useMemo(() => new MoveValidator(state.board), [state.board]);
 
-  // UI Specific State (Ephemeral/Modals)
   const [moveInProgress, setMoveInProgress] = useState(false);
   const [showPromotionModal, setShowPromotionModal] = useState(false);
   const [pendingMove, setPendingMove] = useState(null);
@@ -194,14 +255,12 @@ export default function Game() {
   const [showTakebackModal, setShowTakebackModal] = useState(false);
   const [chatMessageHandler, setChatMessageHandler] = useState(null);
 
-  // Board theme & keyboard navigation state
   const [showSettings, setShowSettings] = useState(false);
   const [boardTheme, setBoardTheme] = useState('brown');
   const [pieceSet, setPieceSet] = useState('cburnett');
-  const [viewingMoveIndex, setViewingMoveIndex] = useState(null); // null = current position
-  const [historicalBoard, setHistoricalBoard] = useState(null); // For viewing past positions
+  const [viewingMoveIndex, setViewingMoveIndex] = useState(null);
+  const [historicalBoard, setHistoricalBoard] = useState(null);
 
-  // Sound Preloading & Scroll Management
   useEffect(() => {
     preloadSounds();
   }, [preloadSounds]);
@@ -220,13 +279,6 @@ export default function Game() {
     }, 100);
   }, []);
 
-  // Initialize state once React Query fetches data
-  useEffect(() => {
-    if (initialGameData?.game) {
-      dispatch({ type: 'INIT_GAME', payload: { data: initialGameData.game, user } });
-    }
-  }, [initialGameData, user]);
-
   // --- 4. WebSocket Integration ---
   const { isConnected, send } = useWebSocket(`/ws/game/${gameId}/`, {
     onOpen: () => setConnectionError(null),
@@ -239,18 +291,22 @@ export default function Game() {
     },
     onMessage: (data) => {
       switch (data.type) {
-        case 'game_state':
-          // Fallback if React Query didn't populate it or WS sends authoritative full state
+        case 'game_sync': // listen for the new sync event
           if (!state.isInitialized) {
-            dispatch({ type: 'INIT_GAME', payload: { data, user } });
+            // pass data.state because the Actor nests the payload under 'state'
+            dispatch({ type: 'INIT_GAME', payload: { data: data.state, user } });
           }
           break;
         case 'move_made':
           setMoveInProgress(false);
-          playMove({ isCapture: data.move.captured, isCheck: data.move.is_check });
+          playMove({ isCapture: !!data.move?.captured, isCheck: data.move?.is_check });
           dispatch({
             type: 'OPPONENT_MOVED',
-            payload: { moveData: data.move, fen: data.fen, status: data.status, winner: data.winner }
+            payload: {
+              move: data.move, // Map directly to 'move' instead of 'moveData'
+              white_time: data.white_time,
+              black_time: data.black_time
+            }
           });
           break;
         case 'clock_sync':
@@ -282,7 +338,6 @@ export default function Game() {
           setShowTakebackModal(true);
           break;
         case 'takeback_accepted':
-          // Reload game state after takeback
           dispatch({
             type: 'STATE_SNAPSHOT',
             payload: { fen: data.fen, check: null, white_time: state.whiteTime, black_time: state.blackTime, last_move: null }
@@ -296,7 +351,7 @@ export default function Game() {
           setMoveInProgress(false);
           setError(data.message);
           setTimeout(() => setError(null), 5000);
-          if (send) send({ type: 'join_game' }); // Reload desync
+          if (send) send({ type: 'join_game' });
           break;
         default:
           console.warn('⚠️ Unknown message type:', data.type);
@@ -304,15 +359,12 @@ export default function Game() {
     }
   });
 
-  // Join game upon WS connection
   useEffect(() => {
     if (isConnected && send) send({ type: 'join_game' });
   }, [isConnected, send]);
 
-  // Keyboard navigation for move history
   useEffect(() => {
     const handleKeyDown = (e) => {
-      // Only handle arrow keys if not typing in an input
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
 
       const confirmedMoves = state.moves.filter(m => !m.optimistic);
@@ -322,7 +374,6 @@ export default function Game() {
         e.preventDefault();
         setViewingMoveIndex(prev => {
           if (prev === null) {
-            // Currently at live position, go to last move
             const newIndex = maxIndex;
             reconstructBoardAtMove(newIndex);
             return newIndex;
@@ -336,9 +387,8 @@ export default function Game() {
       } else if (e.key === 'ArrowRight') {
         e.preventDefault();
         setViewingMoveIndex(prev => {
-          if (prev === null) return null; // Already at live position
+          if (prev === null) return null;
           if (prev >= maxIndex) {
-            // Go back to live position
             setHistoricalBoard(null);
             return null;
           }
@@ -353,12 +403,10 @@ export default function Game() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [state.moves]);
 
-  // Helper to reconstruct board at a specific move index
   const reconstructBoardAtMove = useCallback((moveIndex) => {
     const confirmedMoves = state.moves.filter(m => !m.optimistic);
-    const board = new Board(); // Start from initial position
+    const board = new Board();
 
-    // Replay moves up to the target index
     for (let i = 0; i <= moveIndex && i < confirmedMoves.length; i++) {
       const move = confirmedMoves[i];
       const piece = board.getPiece(move.from);
@@ -372,7 +420,7 @@ export default function Game() {
     setHistoricalBoard(board);
   }, [state.moves]);
 
-  // --- 5. Game Actions ---
+  // game actions
   const executeMove = useCallback((from, to, promotion = null) => {
     if (!validator.isValidMove(from, to, promotion)) {
       setError('Invalid move');
@@ -408,8 +456,9 @@ export default function Game() {
       }
     });
 
+    const uciMove = promotion ? `${from}${to}${promotion}` : `${from}${to}`;
     if (send) {
-      send({ type: 'move', payload: { from, to, promotion, timestamp: Date.now() } });
+      send({ type: 'move', payload: { uci: uciMove, timestamp: Date.now() } });
     }
   }, [state.board, validator, send, suppressScrollTemporarily]);
 
@@ -441,44 +490,60 @@ export default function Game() {
     }
   }, [pendingMove, executeMove]);
 
-  // Controls Handlers
-  const handleMoveClick = (index) => {
+  // controls handlers (strictly websockets)
+  const handleMoveClick = useCallback((index) => {
     setViewingMoveIndex(index);
     reconstructBoardAtMove(index);
-  };
-  const handleReturnToLive = () => {
+  }, [reconstructBoardAtMove]);
+
+  const handleReturnToLive = useCallback(() => {
     setViewingMoveIndex(null);
     setHistoricalBoard(null);
-  };
-  const handleResign = () => resignMutation.mutate();
-  const handleOfferDraw = () => send && send({ type: 'offer_draw' });
-  const handleRequestTakeback = () => send && send({ type: 'request_takeback' });
-  const handleAcceptDraw = () => {
+  }, []);
+
+  const handleResign = useCallback(() => {
+    if (send) send({ type: 'resign' });
+  }, [send]);
+
+  const handleOfferDraw = useCallback(() => {
+    if (send) send({ type: 'offer_draw' });
+  }, [send]);
+
+  const handleRequestTakeback = useCallback(() => {
+    if (send) send({ type: 'request_takeback' });
+  }, [send]);
+
+  const handleAcceptDraw = useCallback(() => {
     if (send) send({ type: 'accept_draw' });
     setShowDrawOfferModal(false);
     setDrawOffer(null);
-  };
-  const handleDeclineDraw = () => {
+  }, [send]);
+
+  const handleDeclineDraw = useCallback(() => {
     if (send) send({ type: 'decline_draw' });
     setShowDrawOfferModal(false);
     setDrawOffer(null);
-  };
-  const handleAcceptTakeback = () => {
+  }, [send]);
+
+  const handleAcceptTakeback = useCallback(() => {
     if (send) send({ type: 'accept_takeback' });
     setShowTakebackModal(false);
     setTakebackOffer(null);
-  };
-  const handleDeclineTakeback = () => {
+  }, [send]);
+
+  const handleDeclineTakeback = useCallback(() => {
+    if (send) send({ type: 'decline_takeback' });
     setShowTakebackModal(false);
     setTakebackOffer(null);
-  };
-  const handleOpenSettings = () => setShowSettings(true);
-  const handleCloseSettings = () => setShowSettings(false);
+  }, [send]);
+
+  const handleOpenSettings = useCallback(() => setShowSettings(true), []);
+  const handleCloseSettings = useCallback(() => setShowSettings(false), []);
 
   const getValidMoves = useCallback((square) => validator.getPieceMoves(square), [validator]);
   const registerChatHandler = useCallback((handler) => setChatMessageHandler(() => handler), []);
 
-  // --- 6. Render ---
+  // render
   if (isQueryLoading || !state.isInitialized || state.playerColor === null) {
     return (
       <div className="container mx-auto max-w-7xl h-[calc(100vh-150px)] flex items-center justify-center">
@@ -508,9 +573,7 @@ export default function Game() {
         </div>
       )}
 
-      {/* Main Game Area - Lichess Style */}
       <div className="flex-1 flex items-center justify-center p-2 gap-2">
-        {/* Left: Chat - Narrow, attached to board */}
         <div className="w-[220px] h-full flex flex-col bg-[#272522] rounded shadow-lg overflow-hidden">
           <ChatBox
             gameId={gameId}
@@ -521,7 +584,6 @@ export default function Game() {
           />
         </div>
 
-        {/* Center: Chess Board - The Focus */}
         <div className="aspect-square h-full max-h-full relative">
           <div className="w-full h-full">
             <ChessBoard
@@ -546,7 +608,6 @@ export default function Game() {
             />
           </div>
 
-          {/* Viewing History Indicator - Subtle pill at top */}
           {viewingMoveIndex !== null && (
             <div className="absolute top-3 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-black/70 backdrop-blur-sm text-white/90 px-4 py-1.5 rounded-full shadow-lg z-10">
               <span className="text-xs font-medium">Move {viewingMoveIndex + 1}</span>
@@ -560,9 +621,7 @@ export default function Game() {
           )}
         </div>
 
-        {/* Right: Clocks, History, Controls - Narrow */}
         <div className="w-[220px] h-full flex flex-col gap-1">
-          {/* Top Clock - Opponent */}
           <CompactPlayerClock
             initialTime={isWhitePerspective ? state.blackTime : state.whiteTime}
             increment={state.increment}
@@ -572,7 +631,6 @@ export default function Game() {
             playerRating={isWhitePerspective ? state.blackPlayer?.rating : state.whitePlayer?.rating}
           />
 
-          {/* Move History - Takes most space */}
           <div className="flex-1 bg-[#1e1c1a] rounded shadow-lg overflow-hidden min-h-0">
             <MoveHistory
               moves={state.moves.filter(m => !m.optimistic)}
@@ -583,7 +641,6 @@ export default function Game() {
             />
           </div>
 
-          {/* Bottom Clock - Player */}
           <CompactPlayerClock
             initialTime={isWhitePerspective ? state.whiteTime : state.blackTime}
             increment={state.increment}
@@ -593,7 +650,6 @@ export default function Game() {
             playerRating={isWhitePerspective ? state.whitePlayer?.rating : state.blackPlayer?.rating}
           />
 
-          {/* Controls - Compact */}
           <GameControls
             isSpectator={state.isSpectator}
             onResign={handleResign}
@@ -608,9 +664,6 @@ export default function Game() {
         </div>
       </div>
 
-      {/* Modals */}
-
-      {/* Settings Modal */}
       {showSettings && (
         <div
           className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center"
@@ -677,7 +730,6 @@ export default function Game() {
         onSelect={handlePromotion}
       />
 
-      {/* Takeback Request Modal */}
       <TakebackModal
         isOpen={showTakebackModal}
         offerFrom={takebackOffer}
@@ -695,8 +747,6 @@ export default function Game() {
     </div>
   );
 }
-
-// --- Subcomponents Remain Unchanged ---
 
 function GameEndedModal({ gameState, onClose, onLeave }) {
   const isDraw = gameState.status === 'draw' || gameState.status === 'stalemate';

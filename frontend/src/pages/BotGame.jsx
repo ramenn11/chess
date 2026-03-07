@@ -5,7 +5,6 @@ import Navbar from '../components/layout/NavBar';
 
 import ChessBoard from '../components/chess/ChessBoard';
 import MoveHistory from '../components/chess/MoveHistory';
-import CapturedPieces from '../components/chess/CapturedPieces';
 import PromotionModal from '../components/chess/PromotionModal';
 import Board from '../chess/Board';
 import MoveValidator from '../chess/MoveValidator';
@@ -774,14 +773,6 @@ function BotGame() {
             )}
           </div>
 
-          {/* Bot Captured Pieces */}
-          <div className="bg-[#1e1c1a] rounded shadow-lg p-2">
-            <CapturedPieces
-              capturedPieces={capturedPieces}
-              color={playerColor === 'white' ? 'black' : 'white'}
-            />
-          </div>
-
           {/* Move History */}
           <div className="h-[50%] bg-[#1e1c1a] rounded shadow-lg overflow-hidden min-h-0">
             <MoveHistory
@@ -790,14 +781,6 @@ function BotGame() {
               onMoveClick={handleMoveClick}
               viewingMoveIndex={viewIndex >= 0 ? viewIndex : null}
               onReturnToLive={handleReturnToLive}
-            />
-          </div>
-
-          {/* Player Captured Pieces */}
-          <div className="bg-[#1e1c1a] rounded shadow-lg p-2">
-            <CapturedPieces
-              capturedPieces={capturedPieces}
-              color={playerColor}
             />
           </div>
 
