@@ -6,7 +6,8 @@ ___
 A full-featured online chess platform with peer-to-peer multiplayer, AI bot opponents, matchmaking, and real-time gameplay.
 
 ## 🏗️ Architecture Overview
-<img width="1057" height="907" alt="chess_arch" src="https://github.com/user-attachments/assets/5095589f-8a73-4929-bf16-1f8d797f4e99" />
+<img width="2816" height="1536" alt="image" src="https://github.com/user-attachments/assets/a81060c1-e65f-495f-9e6f-b748dd62c6fd" />
+/>
 
 
 ## 📋 Prerequisites
