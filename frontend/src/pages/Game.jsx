@@ -42,8 +42,8 @@ function gameReducer(state, action) {
   switch (action.type) {
     case 'INIT_GAME': {
       const { data, user } = action.payload;
-      const isWhite = user?.id === data.white_player_id || user?.id === data.white_player?.id;
-      const isBlack = user?.id === data.black_player_id || user?.id === data.black_player?.id;
+      const isWhite = String(user?.id) === String(data.white_player_id) || String(user?.id) === String(data.white_player?.id);
+      const isBlack = String(user?.id) === String(data.black_player_id) || String(user?.id) === String(data.black_player?.id);
       const board = new Board(data.initial_fen || data.fen || data.current_fen);
 
       const captured = { white: [], black: [] };

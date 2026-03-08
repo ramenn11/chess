@@ -11,9 +11,8 @@ from django.conf import settings
 from thespian.actors import ActorSystem
 from game.matchmaking import Matchmaker
 import json
-
-logger = logging.getLogger(__name__)
-
+import sys
+import socket
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +24,31 @@ except Exception as e:
     logger.warning(f"Global Redis client failed to initialize: {e}")
     redis_client = None
 
+def get_tcp_keepalive_options():
+    """
+    Returns the correct TCP keepalive constants based on the operating system.
+    Safely returns an empty dict for Windows to prevent Error 22 crashes.
+    """
+    options = {}
+    
+    if sys.platform == 'linux':
+        if hasattr(socket, 'TCP_KEEPIDLE'):
+            options[socket.TCP_KEEPIDLE] = 1
+        if hasattr(socket, 'TCP_KEEPINTVL'):
+            options[socket.TCP_KEEPINTVL] = 1
+        if hasattr(socket, 'TCP_KEEPCNT'):
+            options[socket.TCP_KEEPCNT] = 3
+            
+    elif sys.platform == 'darwin':  # macOS
+        if hasattr(socket, 'TCP_KEEPALIVE'): # Mac uses KEEPALIVE instead of KEEPIDLE
+            options[socket.TCP_KEEPALIVE] = 1
+        if hasattr(socket, 'TCP_KEEPINTVL'):
+            options[socket.TCP_KEEPINTVL] = 1
+        if hasattr(socket, 'TCP_KEEPCNT'):
+            options[socket.TCP_KEEPCNT] = 3
+            
+    # Windows ('win32') falls through and returns {}
+    return options
 
 class GameConsumer(AsyncWebsocketConsumer):
     """
@@ -56,7 +80,7 @@ class GameConsumer(AsyncWebsocketConsumer):
                 encoding="utf-8",
                 decode_responses=True,
                 socket_keepalive=True,
-                socket_keepalive_options={1: 1, 2: 1, 3: 3},
+                socket_keepalive_options=get_tcp_keepalive_options(),
             )
             
             self.pubsub = self.redis.pubsub()
@@ -220,7 +244,7 @@ class MatchmakingConsumer(AsyncWebsocketConsumer):
             await self.close()
             return
             
-        self.user_group = f"user_{self.user.id}"
+        self.user_group = f"matchmaking_{self.user.id}"
         await self.channel_layer.group_add(self.user_group, self.channel_name)
         await self.accept()
 

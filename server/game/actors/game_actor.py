@@ -31,7 +31,7 @@ class GameActor(ActorTypeDispatcher):
     def receiveMsg_dict(self, message, sender):
         """Routes the structured dicts sent by the GameConsumer."""
         self.game_id = message.get('game_id')
-        user_id = message.get('user_id')
+        user_id = str(message.get('user_id'))
         data = message.get('data', {})
         action = data.get('type')
         payload = data.get('payload', {})
@@ -91,6 +91,8 @@ class GameActor(ActorTypeDispatcher):
         state = self._load_state()
         if state:
             return state
+
+        from game.models import Game
 
         # one-time: query Postgres and hydrate Redis
         try:

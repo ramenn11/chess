@@ -41,7 +41,9 @@ class Matchmaker:
             p1 = User.objects.get(id=p1_id)
             p2 = User.objects.get(id=p2_id)
             
-            parts = time_control.split('+')
+            safe_time_control = time_control.replace(' ', '+')
+            parts = safe_time_control.split('+')
+            
             initial_time = int(parts[0]) * 60
             increment = int(parts[1]) if len(parts) > 1 else 0
             
@@ -63,11 +65,11 @@ class Matchmaker:
             channel_layer = get_channel_layer()
             
             async_to_sync(channel_layer.group_send)(
-                f"user_{p1.id}",
+                f"matchmaking_{p1.id}",
                 {'type': 'match_found', 'game_id': game.game_id, 'color': 'white'}
             )
             async_to_sync(channel_layer.group_send)(
-                f"user_{p2.id}",
+                f"matchmaking_{p2.id}",
                 {'type': 'match_found', 'game_id': game.game_id, 'color': 'black'}
             )
             
