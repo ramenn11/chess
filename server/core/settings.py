@@ -23,6 +23,11 @@ ALLOWED_HOSTS = os.environ.get(
     "localhost,127.0.0.1,chess-production-0ed7.up.railway.app"
 ).split(",")
 
+CSRF_TRUSTED_ORIGINS = [
+    "https://chess-pi-woad.vercel.app",
+    "https://*.vercel.app",
+]
+
 # --------------------------------------------------
 # GOOGLE OAUTH
 # --------------------------------------------------
@@ -46,12 +51,10 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
 
-    # Third-party
     "rest_framework",
     "rest_framework_simplejwt",
     "rest_framework_simplejwt.token_blacklist",
 
-    # Local apps
     "accounts",
     "game",
 ]
@@ -61,10 +64,10 @@ INSTALLED_APPS = [
 # --------------------------------------------------
 
 MIDDLEWARE = [
-    "corsheaders.middleware.CorsMiddleware",  # must be first
+    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
-    "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
@@ -108,11 +111,15 @@ ASGI_APPLICATION = "core.asgi.application"
 # DATABASE
 # --------------------------------------------------
 
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
 DATABASES = {
-    "default": dj_database_url.parse(
-        os.environ.get("DATABASE_URL"),
-        conn_max_age=600,
-    )
+    "default": dj_database_url.parse(DATABASE_URL, conn_max_age=600)
+} if DATABASE_URL else {
+    "default": {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": BASE_DIR / "db.sqlite3",
+    }
 }
 
 # --------------------------------------------------
@@ -142,7 +149,7 @@ CACHES = {
         "LOCATION": REDIS_URL,
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
-        },
+        }
     }
 }
 
@@ -186,6 +193,9 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # --------------------------------------------------
 
 REST_FRAMEWORK = {
+    "DEFAULT_RENDERER_CLASSES": [
+        "rest_framework.renderers.JSONRenderer",
+    ],
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ),
@@ -209,18 +219,16 @@ SIMPLE_JWT = {
 }
 
 # --------------------------------------------------
-# CORS CONFIGURATION
+# CORS
 # --------------------------------------------------
 
 CORS_ALLOW_CREDENTIALS = True
 
-# Allow your Vercel frontend
 CORS_ALLOWED_ORIGINS = [
     "https://chess-pi-woad.vercel.app",
     "http://localhost:5173",
 ]
 
-# Allow ALL Vercel preview deployments
 CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^https://.*\.vercel\.app$",
 ]
