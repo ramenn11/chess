@@ -1,6 +1,7 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import authService from '../services/authService';
+const API_BASE_URL = import.meta.env.VITE_API_URL;
 
 const AuthContext = createContext(null);
 
@@ -49,7 +50,7 @@ export function AuthProvider({ children }) {
 
   const login = async (email, password) => {
     try {
-      const response = await fetch('http://localhost:8000/api/auth/login/', {
+      const response = await fetch(`${API_BASE_URL} /api/auth/login/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
@@ -81,7 +82,7 @@ export function AuthProvider({ children }) {
 
   const register = async (username, email, password) => {
     try {
-      const response = await fetch('http://localhost:8000/api/auth/register/', {
+      const response = await fetch(`${API_BASE_URL}/api/auth/register/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, email, password, password2: password }),

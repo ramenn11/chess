@@ -4,58 +4,56 @@
 
 set -e
 
-# -----------------------------
 # Colors
-# -----------------------------
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-# -----------------------------
 # Paths
-# -----------------------------
 PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
 SERVER_DIR="$PROJECT_ROOT/server"
 BOT_DIR="$PROJECT_ROOT/chess_bot"
 LOG_DIR="$PROJECT_ROOT/logs"
 
-# -----------------------------
 # Ports
-# -----------------------------
 MAIN_SERVER_PORT=8000
 BOT_SERVER_PORT=8001
 
-# -----------------------------
 # Logs
-# -----------------------------
 mkdir -p "$LOG_DIR"
 
 MAIN_SERVER_LOG="$LOG_DIR/main_server.log"
 BOT_SERVER_LOG="$LOG_DIR/bot_server.log"
 
-# -----------------------------
 # PIDs
-# -----------------------------
 MAIN_SERVER_PID="$LOG_DIR/main_server.pid"
 BOT_SERVER_PID="$LOG_DIR/bot_server.pid"
 
-# -----------------------------
 # Cleanup
-# -----------------------------
 cleanup() {
+    # Prevent the trap from firing twice
+    trap - SIGINT SIGTERM EXIT
+    
     echo -e "${YELLOW}Shutting down services...${NC}"
 
-    for pidfile in \
-        "$MAIN_SERVER_PID" \
-        "$BOT_SERVER_PID"
-    do
+    # 1. Kill the tracked processes AND their children
+    for pidfile in "$MAIN_SERVER_PID" "$BOT_SERVER_PID"; do
         if [ -f "$pidfile" ]; then
-            kill "$(cat "$pidfile")" 2>/dev/null || true
+            PID=$(cat "$pidfile")
+            # Kill child processes (Daphne/Django) of the uv wrapper
+            pkill -P "$PID" 2>/dev/null || true
+            # Kill the uv wrapper itself
+            kill "$PID" 2>/dev/null || true
             rm -f "$pidfile"
         fi
     done
+
+    # 2. Failsafe: Forcefully free the specific ports if anything survived (e.g., auto-reloaders)
+    echo -e "${YELLOW}Freeing ports $MAIN_SERVER_PORT and $BOT_SERVER_PORT...${NC}"
+    lsof -ti:$MAIN_SERVER_PORT | xargs kill -9 2>/dev/null || true
+    lsof -ti:$BOT_SERVER_PORT | xargs kill -9 2>/dev/null || true
 
     echo -e "${GREEN}All services stopped${NC}"
     exit 0
@@ -63,9 +61,7 @@ cleanup() {
 
 trap cleanup SIGINT SIGTERM EXIT
 
-# -----------------------------
 # Checks
-# -----------------------------
 check_prerequisites() {
     echo -e "${BLUE}Checking prerequisites...${NC}"
 
@@ -84,9 +80,7 @@ check_prerequisites() {
     echo -e "${GREEN}Prerequisites OK${NC}"
 }
 
-# -----------------------------
 # Migrations
-# -----------------------------
 run_migrations() {
     echo -e "${BLUE}Running migrations...${NC}"
 
@@ -99,9 +93,7 @@ run_migrations() {
     echo -e "${GREEN}Migrations complete${NC}"
 }
 
-# -----------------------------
 # Services
-# -----------------------------
 start_main_server() {
     echo -e "${BLUE}Starting Daphne (port $MAIN_SERVER_PORT)...${NC}"
     cd "$SERVER_DIR"
@@ -123,9 +115,7 @@ start_bot_server() {
     echo $! > "$BOT_SERVER_PID"
 }
 
-# -----------------------------
 # Monitor
-# -----------------------------
 monitor_services() {
     echo -e "${GREEN}All services running${NC}"
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -149,11 +139,8 @@ monitor_services() {
             fi
         done
     done
-}
 
-# -----------------------------
 # Main
-# -----------------------------
 main() {
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${GREEN}Chess Platform (uv) - Starting${NC}"
