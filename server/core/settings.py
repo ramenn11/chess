@@ -13,27 +13,27 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # --------------------------------------------------
 
 SECRET_KEY = os.environ.get("SECRET_KEY")
+
 if not SECRET_KEY:
     raise ValueError("SECRET_KEY must be set")
 
 DEBUG = os.environ.get("DEBUG", "False") == "True"
 
-ALLOWED_HOSTS = os.environ.get(
-    "ALLOWED_HOSTS",
-    "localhost,127.0.0.1,chess-production-0ed7.up.railway.app"
-).split(",")
+# Railway domain must be allowed
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.environ.get(
+        "ALLOWED_HOSTS",
+        "localhost,127.0.0.1,chess-production-0ed7.up.railway.app"
+    ).split(",")
+    if host.strip()
+]
 
+# Required for POST requests from Vercel
 CSRF_TRUSTED_ORIGINS = [
     "https://chess-pi-woad.vercel.app",
     "https://*.vercel.app",
 ]
-
-# --------------------------------------------------
-# GOOGLE OAUTH
-# --------------------------------------------------
-
-GOOGLE_OAUTH_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
-GOOGLE_OAUTH_CLIENT_SECRET = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "")
 
 # --------------------------------------------------
 # APPLICATIONS
@@ -149,7 +149,7 @@ CACHES = {
         "LOCATION": REDIS_URL,
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
-        }
+        },
     }
 }
 
@@ -229,6 +229,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
 ]
 
+# allow Vercel preview deployments
 CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^https://.*\.vercel\.app$",
 ]
@@ -249,7 +250,7 @@ CORS_ALLOW_HEADERS = [
 
 EMAIL_BACKEND = os.environ.get(
     "EMAIL_BACKEND",
-    "django.core.mail.backends.console.EmailBackend"
+    "django.core.mail.backends.console.EmailBackend",
 )
 
 EMAIL_HOST = os.environ.get("EMAIL_HOST")
