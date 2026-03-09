@@ -24,7 +24,7 @@ ALLOWED_HOSTS = [
     host.strip()
     for host in os.environ.get(
         "ALLOWED_HOSTS",
-        "localhost,127.0.0.1,chess-production-0ed7.up.railway.app"
+        "localhost,127.0.0.1,chess-production-0ed7.up.railway.app,chess-dioa.vercel.app"
     ).split(",")
     if host.strip()
 ]
@@ -33,6 +33,7 @@ ALLOWED_HOSTS = [
 CSRF_TRUSTED_ORIGINS = [
     "https://chess-pi-woad.vercel.app",
     "https://*.vercel.app",
+    "https://chess-dioa.vercel.app",
 ]
 
 # --------------------------------------------------
@@ -227,6 +228,7 @@ CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS = [
     "https://chess-pi-woad.vercel.app",
     "http://localhost:5173",
+    "https://chess-dioa.vercel.app",
 ]
 
 # allow Vercel preview deployments
