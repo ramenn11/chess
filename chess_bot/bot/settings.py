@@ -44,7 +44,10 @@ MIDDLEWARE = [
 # CORS Settings - Allow main server and frontend to communicate
 CORS_ALLOWED_ORIGINS = [
     origin.strip() 
-    for origin in os.environ.get('BOT_CORS_ORIGINS', 'http://localhost:3000,http://localhost:5173,http://localhost:8000').split(',')
+    for origin in os.environ.get(
+        'BOT_CORS_ORIGINS', 
+        'http://localhost:3000,http://localhost:5173'  
+    ).split(',')
     if origin.strip()
 ]
 
