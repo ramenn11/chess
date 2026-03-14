@@ -24,7 +24,7 @@ ALLOWED_HOSTS = [
     host.strip()
     for host in os.environ.get(
         "ALLOWED_HOSTS",
-        "localhost,127.0.0.1,api.chesshub.sbs,chess-production-0ed7.up.railway.app,.railway.app,.vercel.app"
+        "api.chesshub.sbs,chess-production-0ed7.up.railway.app,.railway.app,.vercel.app"
     ).split(",")
     if host.strip()
 ]
@@ -230,6 +230,9 @@ CORS_ALLOWED_ORIGINS = [
     "https://chess-pi-woad.vercel.app",
     "https://chess-dioa.vercel.app",
     "http://localhost:5173",
+    "https://api.chesshub.sbs",
+    "https://api.chesshub.sbs/api/auth/register",
+    "https://api.chesshub.sbs/api/auth/login",
 ]
 
 # Allow Vercel preview deployments
