@@ -16,7 +16,7 @@ SECRET_KEY = os.environ.get('BOT_SECRET_KEY', 'django-insecure-y&bgx0ym!zz-w)y@9
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('BOT_DEBUG', 'True') == 'True'
 
-ALLOWED_HOSTS = os.environ.get('BOT_ALLOWED_HOSTS', 'localhost,127.0.0.1,0.0.0.0','https://www.chesshub.sbs').split(',')
+ALLOWED_HOSTS = os.environ.get('BOT_ALLOWED_HOSTS', 'localhost,127.0.0.1,0.0.0.0,www.chesshub.sbs').split(',')
 
 # Application definition
 INSTALLED_APPS = [
