@@ -231,8 +231,6 @@ CORS_ALLOWED_ORIGINS = [
     "https://chess-dioa.vercel.app",
     "http://localhost:5173",
     "https://api.chesshub.sbs",
-    "https://api.chesshub.sbs/api/auth/register",
-    "https://api.chesshub.sbs/api/auth/login",
 ]
 
 # Allow Vercel preview deployments
