@@ -31,9 +31,8 @@ ALLOWED_HOSTS = [
 
 # Required for POST requests from Vercel
 CSRF_TRUSTED_ORIGINS = [
-    "https://api.chesshub.sbs",
-    "https://chess-dioa.vercel.app",
-    "https://chess-pi-woad.vercel.app",
+    "https://www.chesshub.sbs",
+    "https://chesshub.sbs",
     "https://*.vercel.app",
 ]
 
@@ -227,10 +226,11 @@ SIMPLE_JWT = {
 CORS_ALLOW_CREDENTIALS = True
 
 CORS_ALLOWED_ORIGINS = [
+    "https://www.chesshub.sbs",
+    "https://chesshub.sbs",
     "https://chess-pi-woad.vercel.app",
     "https://chess-dioa.vercel.app",
     "http://localhost:5173",
-    "https://api.chesshub.sbs",
 ]
 
 # Allow Vercel preview deployments
