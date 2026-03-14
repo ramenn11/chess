@@ -32,9 +32,9 @@ ALLOWED_HOSTS = [
 # Required for POST requests from Vercel
 CSRF_TRUSTED_ORIGINS = [
     "https://api.chesshub.sbs",
+    "https://chess-dioa.vercel.app",
     "https://chess-pi-woad.vercel.app",
     "https://*.vercel.app",
-    "https://chess-dioa.vercel.app",
 ]
 
 # --------------------------------------------------
