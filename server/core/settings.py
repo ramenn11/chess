@@ -19,6 +19,13 @@ if not SECRET_KEY:
 
 DEBUG = os.environ.get("DEBUG", "False") == "True"
 
+# --------------------------------------------------
+# GOOGLE OAUTH
+# --------------------------------------------------
+
+GOOGLE_OAUTH_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
+GOOGLE_OAUTH_CLIENT_SECRET = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "")
+
 # Allowed domains
 ALLOWED_HOSTS = [
     host.strip()
