@@ -19,18 +19,19 @@ if not SECRET_KEY:
 
 DEBUG = os.environ.get("DEBUG", "False") == "True"
 
-# Railway domain must be allowed
+# Allowed domains
 ALLOWED_HOSTS = [
     host.strip()
     for host in os.environ.get(
         "ALLOWED_HOSTS",
-        "localhost,127.0.0.1,chess-production-0ed7.up.railway.app,chess-dioa.vercel.app"
+        "localhost,127.0.0.1,api.chesshub.sbs,chess-production-0ed7.up.railway.app,.railway.app,.vercel.app"
     ).split(",")
     if host.strip()
 ]
 
 # Required for POST requests from Vercel
 CSRF_TRUSTED_ORIGINS = [
+    "https://api.chesshub.sbs",
     "https://chess-pi-woad.vercel.app",
     "https://*.vercel.app",
     "https://chess-dioa.vercel.app",
@@ -227,11 +228,11 @@ CORS_ALLOW_CREDENTIALS = True
 
 CORS_ALLOWED_ORIGINS = [
     "https://chess-pi-woad.vercel.app",
-    "http://localhost:5173",
     "https://chess-dioa.vercel.app",
+    "http://localhost:5173",
 ]
 
-# allow Vercel preview deployments
+# Allow Vercel preview deployments
 CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^https://.*\.vercel\.app$",
 ]
